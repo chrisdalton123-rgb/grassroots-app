@@ -199,6 +199,7 @@ export default function MatchdayApp() {
     );
   };
 
+  // Improved Projected Minutes Calculator with accurate Split GK accounting
   const getProjectedMinutes = () => {
     const active = squad.filter((p) => availablePlayerIds.includes(p.id));
     if (active.length === 0) return [];
@@ -210,31 +211,86 @@ export default function MatchdayApp() {
       minutesMap[p.id] = 0;
     });
 
-    let outfieldPlayers = [...active];
-
     if (gkMode === 'fixed' && fixedGkId && minutesMap[fixedGkId] !== undefined) {
       minutesMap[fixedGkId] = totalMatchMins;
-      outfieldPlayers = active.filter((p) => p.id !== fixedGkId);
-    }
+      const outfield = active.filter((p) => p.id !== fixedGkId);
+      const outfieldCapacity = pitchCapacity - 1;
+      let currentPitch = outfield.slice(0, outfieldCapacity);
+      let currentBench = outfield.slice(outfieldCapacity);
 
-    const outfieldCapacity = (gkMode === 'fixed' && fixedGkId) ? pitchCapacity - 1 : pitchCapacity;
-    let currentOutfieldPitch = outfieldPlayers.slice(0, outfieldCapacity);
-    let currentBench = outfieldPlayers.slice(outfieldCapacity);
+      for (let m = 1; m <= totalMatchMins; m++) {
+        currentPitch.forEach((p) => (minutesMap[p.id] += 1));
+        if (m % rotationIntervalMins === 0 && m < totalMatchMins) {
+          for (let i = 0; i < subsPerBatch; i++) {
+            if (currentBench.length === 0 || currentPitch.length === 0) break;
+            const inc = currentBench.shift();
+            const out = currentPitch.shift();
+            if (inc && out) {
+              currentPitch.push(inc);
+              currentBench.push(out);
+            }
+          }
+        }
+      }
+    } else if (gkMode === 'split' && fixedGkId && half2GkId) {
+      // Half 1: fixedGkId in goal (gets halfMinutes automatically)
+      minutesMap[fixedGkId] += halfMinutes;
+      let h1Outfield = active.filter((p) => p.id !== fixedGkId);
+      let outfieldCap = pitchCapacity - 1;
+      let currentPitch = h1Outfield.slice(0, outfieldCap);
+      let currentBench = h1Outfield.slice(outfieldCap);
 
-    for (let minute = 1; minute <= totalMatchMins; minute++) {
-      currentOutfieldPitch.forEach((p) => {
-        minutesMap[p.id] = (minutesMap[p.id] || 0) + 1;
-      });
+      for (let m = 1; m <= halfMinutes; m++) {
+        currentPitch.forEach((p) => (minutesMap[p.id] += 1));
+        if (m % rotationIntervalMins === 0 && m < halfMinutes) {
+          for (let i = 0; i < subsPerBatch; i++) {
+            if (currentBench.length === 0 || currentPitch.length === 0) break;
+            const inc = currentBench.shift();
+            const out = currentPitch.shift();
+            if (inc && out) {
+              currentPitch.push(inc);
+              currentBench.push(out);
+            }
+          }
+        }
+      }
 
-      if (minute % rotationIntervalMins === 0 && minute < totalMatchMins) {
-        for (let i = 0; i < subsPerBatch; i++) {
-          if (currentBench.length === 0 || currentOutfieldPitch.length === 0) break;
-          const incoming = currentBench.shift();
-          const outgoing = currentOutfieldPitch.shift();
+      // Half 2: half2GkId in goal (gets halfMinutes automatically)
+      minutesMap[half2GkId] += halfMinutes;
+      let h2Outfield = active.filter((p) => p.id !== half2GkId);
+      currentPitch = h2Outfield.slice(0, outfieldCap);
+      currentBench = h2Outfield.slice(outfieldCap);
 
-          if (incoming && outgoing) {
-            currentOutfieldPitch.push(incoming);
-            currentBench.push(outgoing);
+      for (let m = halfMinutes + 1; m <= totalMatchMins; m++) {
+        currentPitch.forEach((p) => (minutesMap[p.id] += 1));
+        if (m % rotationIntervalMins === 0 && m < totalMatchMins) {
+          for (let i = 0; i < subsPerBatch; i++) {
+            if (currentBench.length === 0 || currentPitch.length === 0) break;
+            const inc = currentBench.shift();
+            const out = currentPitch.shift();
+            if (inc && out) {
+              currentPitch.push(inc);
+              currentBench.push(out);
+            }
+          }
+        }
+      }
+    } else {
+      // Standard rotation with no GK locking
+      let currentPitch = active.slice(0, pitchCapacity);
+      let currentBench = active.slice(pitchCapacity);
+
+      for (let m = 1; m <= totalMatchMins; m++) {
+        currentPitch.forEach((p) => (minutesMap[p.id] += 1));
+        if (m % rotationIntervalMins === 0 && m < totalMatchMins) {
+          for (let i = 0; i < subsPerBatch; i++) {
+            if (currentBench.length === 0 || currentPitch.length === 0) break;
+            const inc = currentBench.shift();
+            const out = currentPitch.shift();
+            if (inc && out) {
+              currentPitch.push(inc);
+              currentBench.push(out);
+            }
           }
         }
       }
@@ -258,10 +314,14 @@ export default function MatchdayApp() {
       if (gkPlayer) {
         outfieldPlayers = active.filter((p) => p.id !== fixedGkId);
       }
+    } else if (gkMode === 'split' && fixedGkId) {
+      gkPlayer = active.find((p) => p.id === fixedGkId);
+      if (gkPlayer) {
+        outfieldPlayers = active.filter((p) => p.id !== fixedGkId);
+      }
     }
 
-    const outfieldCapacity = (gkMode === 'fixed' && fixedGkId) ? pitchCapacity - 1 : pitchCapacity;
-
+    const outfieldCapacity = pitchCapacity - 1;
     const startingOutfieldPitch = outfieldPlayers.slice(0, outfieldCapacity);
     const startingBench = outfieldPlayers.slice(outfieldCapacity);
 
@@ -280,13 +340,16 @@ export default function MatchdayApp() {
     let interval = rotationIntervalMins;
 
     while (interval < totalMatchMins) {
+      // Split GK Swap at Half Time
       if (gkMode === 'split' && interval === halfMinutes && half2GkId) {
         const h2Gk = active.find((p) => p.id === half2GkId);
-        if (h2Gk) {
+        const h1Gk = active.find((p) => p.id === fixedGkId);
+
+        if (h2Gk && h1Gk) {
           plan.push({
             minute: interval,
-            offPlayer: `[HALF TIME] Change GK`,
-            onPlayer: `#${h2Gk.squad_number} ${h2Gk.name} -> GOAL`,
+            offPlayer: `#${h1Gk.squad_number} ${h1Gk.name} (GK -> OUTFIELD)`,
+            onPlayer: `#${h2Gk.squad_number} ${h2Gk.name} (OUTFIELD -> GOAL)`,
           });
         }
       }
@@ -542,7 +605,7 @@ export default function MatchdayApp() {
         <div>
           <h1 className="text-xl font-black text-lime-400 mb-2">Matchday Scheduler</h1>
 
-          {/* NEW: MATCH DURATION EDITOR CARD */}
+          {/* MATCH DURATION EDITOR CARD */}
           <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
             <label className="block text-xs font-bold text-lime-400 mb-2 uppercase tracking-wider">
               ⏱️ Match Half Duration ({halfMinutes}m per half = {halfMinutes * 2}m total)

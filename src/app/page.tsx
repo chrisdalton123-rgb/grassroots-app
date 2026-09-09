@@ -93,7 +93,7 @@ export default function MatchdayApp() {
   const [subsPerBatch, setSubsPerBatch] = useState<number>(1);
   const [generatedPlan, setGeneratedPlan] = useState<SubPlanStep[]>([]);
 
-  // Squad Management Editing States
+  // Team Roster Editing States
   const [newName, setNewName] = useState('');
   const [newNumber, setNewNumber] = useState('');
   const [newPosition, setNewPosition] = useState('Midfielder');
@@ -179,7 +179,7 @@ export default function MatchdayApp() {
     }
 
     if (playersError) {
-      console.error('Error fetching squad:', playersError);
+      console.error('Error fetching team roster:', playersError);
     } else if (playersData) {
       const formatted: Player[] = playersData.map((p) => {
         const playerStats = statsData?.filter((s) => s.player_id === p.id) || [];
@@ -225,7 +225,7 @@ export default function MatchdayApp() {
     const subsCount = activeCount - currentPitchCapacity;
 
     if (subsCount <= 0) {
-      return { interval: 0, batch: 0, note: 'No subs needed (exact squad count).' };
+      return { interval: 0, batch: 0, note: 'No subs needed (exact team count).' };
     }
     if (subsCount === 1) {
       return { interval: Math.floor((halfMinutes * 2) / activeCount), batch: 1, note: `Recommend 1 sub every ${Math.floor((halfMinutes * 2) / activeCount)} mins for smooth rotation.` };
@@ -1209,7 +1209,7 @@ export default function MatchdayApp() {
             )}
           </div>
 
-          {/* SQUAD AVAILABILITY SELECTION CARD */}
+          {/* TEAM AVAILABILITY SELECTION CARD */}
           <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
             <h2 className="text-xs uppercase tracking-widest text-gray-300 font-bold mb-3 flex justify-between">
               <span>Select Available Players ({availablePlayerIds.length}/{squad.length})</span>
@@ -1330,14 +1330,14 @@ export default function MatchdayApp() {
         </div>
       )}
 
-      {/* TAB 3: ENHANCED EDITABLE SQUAD MANAGEMENT */}
+      {/* TAB 3: EDITABLE TEAM ROSTER MANAGEMENT */}
       {activeTab === 'squad' && (
         <div>
-          <h1 className="text-xl font-black text-lime-400 mb-4">Squad Roster Manager</h1>
+          <h1 className="text-xl font-black text-lime-400 mb-4">Team Roster Manager</h1>
 
           {/* Add New Player Form */}
           <form onSubmit={handleAddPlayer} className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-6">
-            <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-3 font-bold">Add New Squad Player</h2>
+            <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-3 font-bold">Add New Player</h2>
             <div className="flex flex-col gap-3">
               <input
                 type="text"
@@ -1374,7 +1374,7 @@ export default function MatchdayApp() {
             </div>
           </form>
 
-          {/* Editable Squad Roster List */}
+          {/* Editable Team Roster List */}
           <div className="bg-gray-900 p-4 rounded-xl border border-gray-800">
             <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-3 font-bold flex justify-between">
               <span>Active Roster ({squad.length})</span>
@@ -1490,7 +1490,7 @@ export default function MatchdayApp() {
           {/* Equal-Time Audit Heatmap Card */}
           <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-6">
             <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold mb-3 flex justify-between items-center">
-              <span>⏱️ Squad Playing Time Audit</span>
+              <span>⏱️ Team Playing Time Audit</span>
               <span className="text-[10px] text-gray-400">FA 100% Equal Rotation</span>
             </h2>
 
@@ -1571,7 +1571,7 @@ export default function MatchdayApp() {
             activeTab === 'squad' ? 'bg-lime-500 text-black' : 'text-gray-400'
           }`}
         >
-          📋 SQUAD
+          📋 TEAM
         </button>
         <button
           onClick={() => setActiveTab('stats')}

@@ -1,7 +1,7 @@
 'use client';
 
 import React, { useState, useEffect } from 'react';
-import { supabase } from '../lib/supabaseClient';
+import { supabase } from '@/lib/supabaseClient';
 
 type Player = {
   id: string;
@@ -14,21 +14,31 @@ type Player = {
 
 export default function MatchdayApp() {
   const [pitchPlayers, setPitchPlayers] = useState<Player[]>([]);
-  const [benchPlayers, setBenchPlayers] = useState<Player[]>([]);
+  const [subBench, setSubBench] = useState<Player[]>([]);
   const [selectedOnPitch, setSelectedOnPitch] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Timer states
-  const [secondsRemaining, setSecondsRemaining] = useState(600); // 10 mins = 600 secs
+  // Match clock states (UK Grassroots 10-min halves/periods)
+  const [secondsRemaining, setSecondsRemaining] = useState(600);
   const [isClockRunning, setIsClockRunning] = useState(false);
-  const [currentQuarter, setCurrentQuarter] = useState(1);
+  const [currentPeriod, setCurrentPeriod] = useState(1);
 
-  // 1. Fetch players from Supabase on initial load
+  const formatTime = (totalSeconds: number) => {
+    const mins = Math.floor(totalSeconds / 60);
+    const secs = totalSeconds % 60;
+    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
+  };
+
+  const formatPlayerMins = (totalSeconds: number) => {
+    const mins = Math.floor(totalSeconds / 60);
+    return `${mins} mins`;
+  };
+
   useEffect(() => {
     async function loadSquad() {
-      const { data, error } = await supabase.from('players').select('*');
+      const { data, error } = await supabase.from('players').select('*').order('squad_number', { ascending: true });
       if (error) {
-        console.error('Error fetching players:', error);
+        console.error('Error fetching squad:', error);
       } else if (data) {
         const formatted: Player[] = data.map((p) => ({
           id: p.id,
@@ -36,27 +46,23 @@ export default function MatchdayApp() {
           squad_number: p.squad_number,
           preferred_position: p.preferred_position,
           seconds_played: 0,
-          current_position: p.preferred_position || 'BENCH',
+          current_position: p.preferred_position || 'SUB',
         }));
 
         setPitchPlayers(formatted.slice(0, 7));
-        setBenchPlayers(formatted.slice(7));
+        setSubBench(formatted.slice(7));
       }
       setLoading(false);
     }
     loadSquad();
   }, []);
 
-  // 2. Live Match Clock Interval
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
 
     if (isClockRunning && secondsRemaining > 0) {
       interval = setInterval(() => {
-        // Count down match clock
         setSecondsRemaining((prev) => prev - 1);
-
-        // Add +1 second of game time to every player currently on the pitch
         setPitchPlayers((prevPitch) =>
           prevPitch.map((player) => ({
             ...player,
@@ -73,56 +79,42 @@ export default function MatchdayApp() {
     };
   }, [isClockRunning, secondsRemaining]);
 
-  // Format seconds into MM:SS display
-  const formatTime = (totalSeconds: number) => {
-    const mins = Math.floor(totalSeconds / 60);
-    const secs = totalSeconds % 60;
-    return `${mins.toString().padStart(2, '0')}:${secs.toString().padStart(2, '0')}`;
-  };
-
-  // Format player minutes (e.g. "3.5 mins")
-  const formatPlayerMins = (totalSeconds: number) => {
-    const mins = Math.floor(totalSeconds / 60);
-    return `${mins} mins`;
-  };
-
-  // Handle two-tap substitution
-  const handleSwap = (benchPlayerId: string) => {
+  const handleSubSwap = (benchPlayerId: string) => {
     if (!selectedOnPitch) return;
 
     const onPitchIndex = pitchPlayers.findIndex((p) => p.id === selectedOnPitch);
-    const benchIndex = benchPlayers.findIndex((p) => p.id === benchPlayerId);
+    const benchIndex = subBench.findIndex((p) => p.id === benchPlayerId);
 
     if (onPitchIndex === -1 || benchIndex === -1) return;
 
     const newPitch = [...pitchPlayers];
-    const newBench = [...benchPlayers];
+    const newBench = [...subBench];
 
     const outgoing = newPitch[onPitchIndex];
     const incoming = newBench[benchIndex];
 
     newPitch[onPitchIndex] = { ...incoming, current_position: outgoing.current_position };
-    newBench[benchIndex] = { ...outgoing, current_position: 'BENCH' };
+    newBench[benchIndex] = { ...outgoing, current_position: 'SUB' };
 
     setPitchPlayers(newPitch);
-    setBenchPlayers(newBench);
+    setSubBench(newBench);
     setSelectedOnPitch(null);
   };
 
   if (loading) {
-    return <div className="bg-black text-white min-h-screen p-8 text-center font-bold">Loading Squad Data...</div>;
+    return <div className="bg-black text-white min-h-screen p-8 text-center font-bold">Loading Squad List...</div>;
   }
 
   return (
     <div className="bg-black text-white min-h-screen p-4 font-sans select-none max-w-md mx-auto">
-      {/* Top Match Clock Header */}
+      {/* Top Matchday Header */}
       <div className="flex justify-between items-center bg-gray-900 p-4 rounded-xl mb-4 border border-gray-800">
         <div>
           <span className="text-xs text-gray-400 block font-bold uppercase tracking-wider">
-            Quarter {currentQuarter} Live
+            Half {currentPeriod} — Live
           </span>
           <h1 className="text-2xl font-black text-lime-400 font-mono tracking-tight">
-            Q{currentQuarter} — {formatTime(secondsRemaining)}
+            H{currentPeriod} — {formatTime(secondsRemaining)}
           </h1>
         </div>
         <button
@@ -135,10 +127,10 @@ export default function MatchdayApp() {
         </button>
       </div>
 
-      {/* Pitch Grid */}
+      {/* On Pitch Section */}
       <div className="mb-6">
         <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-2 font-bold">
-          On Pitch (Tap player to swap)
+          On Pitch (Tap player to substitute)
         </h2>
         <div className="grid grid-cols-2 gap-3">
           {pitchPlayers.map((player) => {
@@ -170,17 +162,17 @@ export default function MatchdayApp() {
         </div>
       </div>
 
-      {/* Bench Section */}
+      {/* Substitutes Bench */}
       <div className="bg-gray-900 p-4 rounded-xl border border-gray-800">
         <h2 className="text-xs uppercase tracking-widest text-amber-400 mb-2 font-bold">
-          Bench {selectedOnPitch ? '— Tap player to sub in' : ''}
+          Substitutes Bench {selectedOnPitch ? '— Tap to sub on' : ''}
         </h2>
         <div className="flex flex-col gap-2">
-          {benchPlayers.map((player) => (
+          {subBench.map((player) => (
             <button
               key={player.id}
               disabled={!selectedOnPitch}
-              onClick={() => handleSwap(player.id)}
+              onClick={() => handleSubSwap(player.id)}
               className={`p-3.5 rounded-xl flex justify-between items-center text-left border transition-all ${
                 selectedOnPitch
                   ? 'bg-amber-500/10 border-amber-500 text-amber-200 active:bg-amber-500 active:text-black'
@@ -191,7 +183,7 @@ export default function MatchdayApp() {
                 <span className="font-extrabold text-base">#{player.squad_number} {player.name}</span>
                 <span className="ml-3 text-xs font-mono">{formatPlayerMins(player.seconds_played)}</span>
               </div>
-              {selectedOnPitch && <span className="font-black text-xs">SWAP IN →</span>}
+              {selectedOnPitch && <span className="font-black text-xs">SUB ON →</span>}
             </button>
           ))}
         </div>

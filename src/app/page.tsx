@@ -13,7 +13,6 @@ type Player = {
   isAvailable?: boolean;
   isInjured?: boolean;
   isActive?: boolean;
-  // Season aggregate stats
   total_matches?: number;
   total_seconds_played?: number;
   total_goals?: number;
@@ -57,6 +56,21 @@ const AGE_PRESETS: Record<string, { pitchCount: number; halfMins: number; label:
   'TOURNAMENT': { pitchCount: 6, halfMins: 10, label: 'Summer 6s (6v6 — 10m Games)' },
 };
 
+const FORMATION_OPTIONS: Record<number, { label: string; roles: string[] }[]> = {
+  5: [
+    { label: '2-1-1 (Solid Base)', roles: ['GK', 'DEF', 'DEF', 'MID', 'STR'] },
+    { label: '1-2-1 (Diamond)', roles: ['GK', 'DEF', 'MID', 'MID', 'STR'] },
+  ],
+  7: [
+    { label: '2-3-1 (Balanced)', roles: ['GK', 'DEF', 'DEF', 'MID', 'MID', 'MID', 'STR'] },
+    { label: '3-2-1 (Tree)', roles: ['GK', 'DEF', 'DEF', 'DEF', 'MID', 'MID', 'STR'] },
+  ],
+  9: [
+    { label: '3-3-2 (Standard)', roles: ['GK', 'DEF', 'DEF', 'DEF', 'MID', 'MID', 'MID', 'STR', 'STR'] },
+    { label: '3-4-1 (Midfield Heavy)', roles: ['GK', 'DEF', 'DEF', 'DEF', 'MID', 'MID', 'MID', 'MID', 'STR'] },
+  ],
+};
+
 export default function MatchdayApp() {
   const [activeTab, setActiveTab] = useState<'matchday' | 'planner' | 'squad' | 'stats'>('matchday');
   const [squad, setSquad] = useState<Player[]>([]);
@@ -74,6 +88,10 @@ export default function MatchdayApp() {
   const [carouselPitches, setCarouselPitches] = useState<number>(2);
   const [showSettings, setShowSettings] = useState<boolean>(false);
 
+  // Tactical Pitch Board View Options
+  const [viewMode, setViewMode] = useState<'pitch' | 'cards'>('pitch');
+  const [formationIndex, setFormationIndex] = useState<number>(0);
+
   // Powerplay & Injury States
   const [isPowerplayActive, setIsPowerplayActive] = useState<boolean>(false);
 
@@ -81,7 +99,6 @@ export default function MatchdayApp() {
   const [goals, setGoals] = useState<MatchGoal[]>([]);
   const [playerOfTheMatch, setPlayerOfTheMatch] = useState<string | null>(null);
   const [opponentName, setOpponentName] = useState<string>('Opponent');
-  const [showGoalLog, setShowGoalLog] = useState<boolean>(false);
 
   // Planner States
   const [availablePlayerIds, setAvailablePlayerIds] = useState<string[]>([]);
@@ -145,7 +162,7 @@ export default function MatchdayApp() {
 
   const formatPlayerMins = (totalSeconds: number) => {
     const mins = Math.floor(totalSeconds / 60);
-    return `${mins} mins`;
+    return `${mins}m`;
   };
 
   const ourGoalsCount = goals.filter((g) => !g.isOpponent).length;
@@ -153,7 +170,6 @@ export default function MatchdayApp() {
   const goalDifference = opponentGoalsCount - ourGoalsCount;
 
   const pendingPlanSteps = generatedPlan.filter((step) => step.status === 'pending');
-  const completedPlanSteps = generatedPlan.filter((step) => step.status === 'completed');
 
   const allPlayers = [...pitchPlayers, ...subBench];
   const lowestSeconds = allPlayers.length > 0 ? Math.min(...allPlayers.map((p) => p.seconds_played)) : 0;
@@ -237,22 +253,6 @@ export default function MatchdayApp() {
       return { interval: 7, batch: 2, note: 'Recommend 2 subs every 7 mins to keep tempo high.' };
     }
     return { interval: 7, batch: 1, note: 'Standard rotation preset.' };
-  };
-
-  const applyPreset = (presetKey: string) => {
-    setAgeGroup(presetKey);
-    const preset = AGE_PRESETS[presetKey];
-    if (preset) {
-      const capacity = presetKey === 'U7' ? carouselPitches * 3 : preset.pitchCount;
-      setBasePitchCapacity(capacity);
-      setHalfMinutes(preset.halfMins);
-      setSecondsRemaining(preset.halfMins * 60);
-      setIsClockRunning(false);
-
-      const activeSquad = squad.filter((p) => availablePlayerIds.includes(p.id) && !p.isInjured);
-      setPitchPlayers(activeSquad.slice(0, capacity));
-      setSubBench(activeSquad.slice(capacity));
-    }
   };
 
   const handleHalfMinutesChange = (newMins: number) => {
@@ -773,6 +773,10 @@ export default function MatchdayApp() {
   const rec = getRecommendation();
   const squadMaxSeconds = Math.max(...squad.map((p) => p.total_seconds_played || 0), 1);
 
+  const activeFormations = FORMATION_OPTIONS[basePitchCapacity] || [
+    { label: 'Standard Formation', roles: Array(basePitchCapacity).fill('OUTFIELD') },
+  ];
+
   return (
     <div className="bg-black text-white min-h-screen pb-20 p-4 font-sans select-none max-w-md mx-auto">
       {/* BRANDING HEADER */}
@@ -800,12 +804,14 @@ export default function MatchdayApp() {
             <span className="text-xs font-bold text-lime-400">
               {AGE_PRESETS[ageGroup]?.label || `${currentPitchCapacity}v${currentPitchCapacity}`}
             </span>
-            <button
-              onClick={() => setShowSettings(!showSettings)}
-              className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold px-2.5 py-1 rounded border border-gray-700"
-            >
-              ⚙️ SETTINGS
-            </button>
+            <div className="flex gap-1.5">
+              <button
+                onClick={() => setViewMode(viewMode === 'pitch' ? 'cards' : 'pitch')}
+                className="text-[11px] bg-lime-500 text-black font-extrabold px-2.5 py-1 rounded shadow"
+              >
+                {viewMode === 'pitch' ? '🎴 CARDS VIEW' : '🏟️ PITCH BOARD'}
+              </button>
+            </div>
           </div>
 
           {/* FA POWERPLAY ALERT BANNER */}
@@ -898,65 +904,163 @@ export default function MatchdayApp() {
             </div>
           )}
 
-          {/* Pitch Display */}
-          <div className="mb-6">
-            <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-2 font-bold flex justify-between">
-              <span>On Pitch ({pitchPlayers.length}/{currentPitchCapacity})</span>
-              {isPowerplayActive && <span className="text-purple-400">⚡ POWERPLAY (+1)</span>}
-            </h2>
-            <div className="grid grid-cols-2 gap-3">
-              {pitchPlayers.map((player) => {
-                const isSelected = selectedOnPitch === player.id;
-                const isFixedGk = gkMode === 'fixed' && player.id === fixedGkId;
+          {/* TACTICAL PITCH BOARD VIEW */}
+          {viewMode === 'pitch' ? (
+            <div className="mb-6 bg-gray-900 p-3.5 rounded-2xl border border-gray-800">
+              <div className="flex justify-between items-center mb-3">
+                <span className="text-xs uppercase tracking-widest text-lime-400 font-bold">
+                  🏟️ Tactical Board ({pitchPlayers.length}/{currentPitchCapacity})
+                </span>
+                {activeFormations.length > 1 && (
+                  <select
+                    value={formationIndex}
+                    onChange={(e) => setFormationIndex(parseInt(e.target.value, 10))}
+                    className="bg-black border border-gray-800 text-lime-400 font-bold text-[10px] rounded px-2 py-1"
+                  >
+                    {activeFormations.map((f, i) => (
+                      <option key={i} value={i}>{f.label}</option>
+                    ))}
+                  </select>
+                )}
+              </div>
 
-                return (
-                  <div key={player.id} className="relative">
-                    <button
-                      onClick={() => {
-                        triggerHaptic();
-                        setSelectedOnPitch(isSelected ? null : player.id);
-                      }}
-                      className={`w-full p-3.5 rounded-xl border-2 text-left transition-all relative ${
-                        isSelected
-                          ? 'bg-yellow-500 border-yellow-300 text-black scale-102 shadow-lg'
-                          : isFixedGk
-                          ? 'bg-gray-900 border-lime-500 text-white'
-                          : 'bg-gray-900 border-gray-800 text-white'
-                      }`}
-                    >
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="font-extrabold text-base">
-                          #{player.squad_number} {player.name}
-                        </span>
-                        <span className={`text-xs px-2 py-0.5 rounded font-black ${isSelected ? 'bg-black text-yellow-500' : isFixedGk ? 'bg-lime-500 text-black' : 'bg-gray-800 text-lime-400'}`}>
-                          {isFixedGk ? 'GK (LOCKED)' : player.current_position}
-                        </span>
-                      </div>
+              {/* GREEN FOOTBALL PITCH CANVAS */}
+              <div className="relative bg-emerald-900 border-2 border-emerald-500/60 rounded-xl p-3 min-h-[380px] flex flex-col justify-between shadow-inner overflow-hidden">
+                <div className="absolute inset-x-0 top-1/2 h-0.5 bg-emerald-500/30 -translate-y-1/2" />
+                <div className="absolute top-1/2 left-1/2 w-20 h-20 border border-emerald-500/30 rounded-full -translate-x-1/2 -translate-y-1/2" />
+                <div className="absolute top-0 left-1/2 w-32 h-10 border-b border-x border-emerald-500/30 rounded-b-lg -translate-x-1/2" />
+                <div className="absolute bottom-0 left-1/2 w-32 h-10 border-t border-x border-emerald-500/30 rounded-t-lg -translate-x-1/2" />
 
-                      <div className="flex justify-between items-center text-xs font-mono opacity-90 mt-2">
-                        <span>{formatPlayerMins(player.seconds_played)} played</span>
-                      </div>
-                    </button>
-
-                    <div className="flex gap-1 mt-1">
-                      <button
-                        onClick={() => handleLogGoal(player.name, false)}
-                        className="flex-1 bg-gray-950 hover:bg-lime-500 hover:text-black border border-gray-800 text-gray-300 text-[10px] font-bold py-1 rounded transition-all"
-                      >
-                        ⚽ GOAL
-                      </button>
-                      <button
-                        onClick={() => handleMarkInjured(player.id)}
-                        className="bg-red-950 hover:bg-red-600 text-red-300 hover:text-white border border-red-800 text-[10px] font-bold px-2 py-1 rounded transition-all"
-                      >
-                        🏥 INJURY
-                      </button>
-                    </div>
+                <div className="relative z-10 flex flex-col justify-between h-full min-h-[360px] py-1">
+                  {/* Strikers */}
+                  <div className="flex justify-around items-center">
+                    {pitchPlayers.slice(Math.ceil(pitchPlayers.length * 0.6)).map((player) => {
+                      const isSelected = selectedOnPitch === player.id;
+                      return (
+                        <button
+                          key={player.id}
+                          onClick={() => {
+                            triggerHaptic();
+                            setSelectedOnPitch(isSelected ? null : player.id);
+                          }}
+                          className={`p-2 rounded-xl text-center transition-all border ${
+                            isSelected ? 'bg-yellow-400 text-black border-yellow-200 scale-105 shadow-xl' : 'bg-black/80 border-lime-400/50 text-white'
+                          }`}
+                        >
+                          <span className="text-[10px] font-black block">#{player.squad_number} {player.name}</span>
+                          <span className="text-[9px] font-mono text-lime-300">{formatPlayerMins(player.seconds_played)}</span>
+                        </button>
+                      );
+                    })}
                   </div>
-                );
-              })}
+
+                  {/* Midfielders / Defenders */}
+                  <div className="flex justify-around items-center">
+                    {pitchPlayers.slice(1, Math.ceil(pitchPlayers.length * 0.6)).map((player) => {
+                      const isSelected = selectedOnPitch === player.id;
+                      return (
+                        <button
+                          key={player.id}
+                          onClick={() => {
+                            triggerHaptic();
+                            setSelectedOnPitch(isSelected ? null : player.id);
+                          }}
+                          className={`p-2 rounded-xl text-center transition-all border ${
+                            isSelected ? 'bg-yellow-400 text-black border-yellow-200 scale-105 shadow-xl' : 'bg-black/80 border-lime-400/50 text-white'
+                          }`}
+                        >
+                          <span className="text-[10px] font-black block">#{player.squad_number} {player.name}</span>
+                          <span className="text-[9px] font-mono text-lime-300">{formatPlayerMins(player.seconds_played)}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+
+                  {/* Goalkeeper */}
+                  <div className="flex justify-center items-center">
+                    {pitchPlayers.slice(0, 1).map((player) => {
+                      const isSelected = selectedOnPitch === player.id;
+                      return (
+                        <button
+                          key={player.id}
+                          onClick={() => {
+                            triggerHaptic();
+                            setSelectedOnPitch(isSelected ? null : player.id);
+                          }}
+                          className={`p-2 rounded-xl text-center transition-all border ${
+                            isSelected ? 'bg-yellow-400 text-black border-yellow-200 scale-105 shadow-xl' : 'bg-black/90 border-lime-400 text-white'
+                          }`}
+                        >
+                          <span className="text-[10px] font-black block">🧤 #{player.squad_number} {player.name} (GK)</span>
+                          <span className="text-[9px] font-mono text-lime-300">{formatPlayerMins(player.seconds_played)}</span>
+                        </button>
+                      );
+                    })}
+                  </div>
+                </div>
+              </div>
             </div>
-          </div>
+          ) : (
+            /* COMPACT CARDS VIEW */
+            <div className="mb-6">
+              <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-2 font-bold flex justify-between">
+                <span>On Pitch ({pitchPlayers.length}/{currentPitchCapacity})</span>
+                {isPowerplayActive && <span className="text-purple-400">⚡ POWERPLAY (+1)</span>}
+              </h2>
+              <div className="grid grid-cols-2 gap-3">
+                {pitchPlayers.map((player) => {
+                  const isSelected = selectedOnPitch === player.id;
+                  const isFixedGk = gkMode === 'fixed' && player.id === fixedGkId;
+
+                  return (
+                    <div key={player.id} className="relative">
+                      <button
+                        onClick={() => {
+                          triggerHaptic();
+                          setSelectedOnPitch(isSelected ? null : player.id);
+                        }}
+                        className={`w-full p-3.5 rounded-xl border-2 text-left transition-all relative ${
+                          isSelected
+                            ? 'bg-yellow-500 border-yellow-300 text-black scale-102 shadow-lg'
+                            : isFixedGk
+                            ? 'bg-gray-900 border-lime-500 text-white'
+                            : 'bg-gray-900 border-gray-800 text-white'
+                        }`}
+                      >
+                        <div className="flex justify-between items-center mb-1">
+                          <span className="font-extrabold text-base">
+                            #{player.squad_number} {player.name}
+                          </span>
+                          <span className={`text-xs px-2 py-0.5 rounded font-black ${isSelected ? 'bg-black text-yellow-500' : isFixedGk ? 'bg-lime-500 text-black' : 'bg-gray-800 text-lime-400'}`}>
+                            {isFixedGk ? 'GK (LOCKED)' : player.current_position}
+                          </span>
+                        </div>
+
+                        <div className="flex justify-between items-center text-xs font-mono opacity-90 mt-2">
+                          <span>{formatPlayerMins(player.seconds_played)} played</span>
+                        </div>
+                      </button>
+
+                      <div className="flex gap-1 mt-1">
+                        <button
+                          onClick={() => handleLogGoal(player.name, false)}
+                          className="flex-1 bg-gray-950 hover:bg-lime-500 hover:text-black border border-gray-800 text-gray-300 text-[10px] font-bold py-1 rounded transition-all"
+                        >
+                          ⚽ GOAL
+                        </button>
+                        <button
+                          onClick={() => handleMarkInjured(player.id)}
+                          className="bg-red-950 hover:bg-red-600 text-red-300 hover:text-white border border-red-800 text-[10px] font-bold px-2 py-1 rounded transition-all"
+                        >
+                          🏥 INJURY
+                        </button>
+                      </div>
+                    </div>
+                  );
+                })}
+              </div>
+            </div>
+          )}
 
           {/* Bench Section */}
           <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-6">
@@ -1076,7 +1180,7 @@ export default function MatchdayApp() {
         </div>
       )}
 
-      {/* TAB 2: FULL RESTORED SCHEDULER / PLANNER */}
+      {/* TAB 2: FULL RESTORED PLANNER */}
       {activeTab === 'planner' && (
         <div>
           <h1 className="text-xl font-black text-lime-400 mb-2">Matchday Scheduler</h1>

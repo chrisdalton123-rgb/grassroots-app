@@ -45,6 +45,7 @@ export default function MatchdayApp() {
   const [squad, setSquad] = useState<Player[]>([]);
   const [pitchPlayers, setPitchPlayers] = useState<Player[]>([]);
   const [subBench, setSubBench] = useState<Player[]>([]);
+  const [injuredPlayers, setInjuredPlayers] = useState<Player[]>([]);
   const [selectedOnPitch, setSelectedOnPitch] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
@@ -212,42 +213,128 @@ export default function MatchdayApp() {
     setIsClockRunning(false);
   };
 
+  // Helper to recalculate remaining future sub schedule dynamically
+  const recalculateFutureSubSchedule = (
+    currentPitch: Player[],
+    currentBench: Player[],
+    effectivePitchCap: number
+  ) => {
+    const currentMin = Math.max(1, Math.ceil((halfMinutes * 60 - secondsRemaining) / 60));
+    const totalMatchMins = halfMinutes * 2;
+
+    const completed = generatedPlan.filter((s) => s.status === 'completed');
+    const newPendingPlan: SubPlanStep[] = [];
+
+    let tempPitch = [...currentPitch];
+    let tempBench = [...currentBench];
+
+    // Filter out Goalkeeper if fixed
+    if (fixedGkId) {
+      tempPitch = tempPitch.filter((p) => p.id !== fixedGkId);
+      tempBench = tempBench.filter((p) => p.id !== fixedGkId);
+    }
+
+    let interval = Math.ceil(currentMin / rotationIntervalMins) * rotationIntervalMins;
+    if (interval <= currentMin) interval += rotationIntervalMins;
+
+    while (interval < totalMatchMins) {
+      for (let i = 0; i < subsPerBatch; i++) {
+        if (tempBench.length === 0 || tempPitch.length === 0) break;
+
+        const incoming = tempBench.shift();
+        const outgoing = tempPitch.shift();
+
+        if (incoming && outgoing) {
+          newPendingPlan.push({
+            id: Math.random().toString(),
+            minute: interval,
+            offPlayerId: outgoing.id,
+            offPlayerName: `#${outgoing.squad_number} ${outgoing.name}`,
+            onPlayerId: incoming.id,
+            onPlayerName: `#${incoming.squad_number} ${incoming.name}`,
+            status: 'pending',
+          });
+
+          tempPitch.push(incoming);
+          tempBench.push(outgoing);
+        }
+      }
+      interval += rotationIntervalMins;
+    }
+
+    setGeneratedPlan([...completed, ...newPendingPlan]);
+  };
+
+  // Toggle Powerplay (+1 Pitch Slot) and recalculate sub schedule
   const togglePowerplay = () => {
     triggerHaptic();
     const newPowerplayState = !isPowerplayActive;
     setIsPowerplayActive(newPowerplayState);
 
+    let updatedPitch = [...pitchPlayers];
+    let updatedBench = [...subBench];
+    const newCap = newPowerplayState ? basePitchCapacity + 1 : basePitchCapacity;
+
     if (newPowerplayState && subBench.length > 0) {
       const subToPromote = subBench[0];
-      setPitchPlayers((prev) => [...prev, { ...subToPromote, current_position: 'POWERPLAY' }]);
-      setSubBench((prev) => prev.filter((p) => p.id !== subToPromote.id));
+      updatedPitch = [...pitchPlayers, { ...subToPromote, current_position: 'POWERPLAY' }];
+      updatedBench = subBench.filter((p) => p.id !== subToPromote.id);
+      setPitchPlayers(updatedPitch);
+      setSubBench(updatedBench);
     } else if (!newPowerplayState && pitchPlayers.length > basePitchCapacity) {
       const playerToBench = pitchPlayers[pitchPlayers.length - 1];
-      setPitchPlayers((prev) => prev.slice(0, basePitchCapacity));
-      setSubBench((prev) => [{ ...playerToBench, current_position: 'SUB' }, ...prev]);
+      updatedPitch = pitchPlayers.slice(0, basePitchCapacity);
+      updatedBench = [{ ...playerToBench, current_position: 'SUB' }, ...subBench];
+      setPitchPlayers(updatedPitch);
+      setSubBench(updatedBench);
+    }
+
+    if (generatedPlan.length > 0) {
+      recalculateFutureSubSchedule(updatedPitch, updatedBench, newCap);
     }
   };
 
+  // Mark Player as Injured & Auto-Recalculate Remaining Schedule
   const handleMarkInjured = (playerId: string) => {
     triggerHaptic();
+    const targetPlayer = [...pitchPlayers, ...subBench].find((p) => p.id === playerId);
+    if (!targetPlayer) return;
+
     const isPlayerOnPitch = pitchPlayers.some((p) => p.id === playerId);
+    let updatedPitch = [...pitchPlayers];
+    let updatedBench = [...subBench];
 
     if (isPlayerOnPitch && subBench.length > 0) {
       const subIn = subBench.reduce((prev, curr) => (prev.seconds_played < curr.seconds_played ? prev : curr));
-      setPitchPlayers((prev) =>
-        prev.map((p) => (p.id === playerId ? { ...subIn, current_position: p.current_position } : p))
-      );
-      setSubBench((prev) => prev.filter((p) => p.id !== subIn.id));
+      updatedPitch = pitchPlayers.map((p) => (p.id === playerId ? { ...subIn, current_position: p.current_position } : p));
+      updatedBench = subBench.filter((p) => p.id !== subIn.id);
     } else if (isPlayerOnPitch) {
-      setPitchPlayers((prev) => prev.filter((p) => p.id !== playerId));
+      updatedPitch = pitchPlayers.filter((p) => p.id !== playerId);
     } else {
-      setSubBench((prev) => prev.filter((p) => p.id !== playerId));
+      updatedBench = subBench.filter((p) => p.id !== playerId);
     }
 
+    setPitchPlayers(updatedPitch);
+    setSubBench(updatedBench);
+    setInjuredPlayers((prev) => [...prev, { ...targetPlayer, isInjured: true }]);
     setAvailablePlayerIds((prev) => prev.filter((id) => id !== playerId));
-    setGeneratedPlan((prev) =>
-      prev.filter((step) => step.offPlayerId !== playerId && step.onPlayerId !== playerId)
-    );
+
+    recalculateFutureSubSchedule(updatedPitch, updatedBench, currentPitchCapacity);
+  };
+
+  // Recover Injured Player & Return to Rotation
+  const handleRecoverPlayer = (playerId: string) => {
+    triggerHaptic();
+    const playerToRecover = injuredPlayers.find((p) => p.id === playerId);
+    if (!playerToRecover) return;
+
+    setInjuredPlayers((prev) => prev.filter((p) => p.id !== playerId));
+    setAvailablePlayerIds((prev) => [...prev, playerId]);
+
+    const updatedBench = [...subBench, { ...playerToRecover, isInjured: false, current_position: 'SUB' }];
+    setSubBench(updatedBench);
+
+    recalculateFutureSubSchedule(pitchPlayers, updatedBench, currentPitchCapacity);
   };
 
   useEffect(() => {
@@ -801,6 +888,32 @@ export default function MatchdayApp() {
                 );
               })}
             </div>
+
+            {/* INJURED PLAYERS / RECOVERY DRAWER */}
+            {injuredPlayers.length > 0 && (
+              <div className="mt-4 pt-3 border-t border-gray-800">
+                <h3 className="text-xs font-bold text-red-400 mb-2 uppercase tracking-wider flex justify-between items-center">
+                  <span>🏥 Injured / Resting ({injuredPlayers.length})</span>
+                  <span className="text-[10px] text-gray-400">Tap to return to play</span>
+                </h3>
+                <div className="flex flex-col gap-1.5">
+                  {injuredPlayers.map((player) => (
+                    <div key={player.id} className="p-2.5 bg-black rounded-lg border border-red-900/50 flex justify-between items-center text-xs">
+                      <div>
+                        <span className="font-bold text-gray-300">#{player.squad_number} {player.name}</span>
+                        <span className="ml-2 font-mono text-[10px] text-gray-500">{formatPlayerMins(player.seconds_played)}</span>
+                      </div>
+                      <button
+                        onClick={() => handleRecoverPlayer(player.id)}
+                        className="bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500 hover:text-black font-extrabold text-[10px] px-2.5 py-1 rounded transition-all"
+                      >
+                        ✓ RECOVERED / SUB ON
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              </div>
+            )}
           </div>
 
           {/* WhatsApp Share Section */}
@@ -838,7 +951,7 @@ export default function MatchdayApp() {
         </div>
       )}
 
-      {/* TAB 2: SCHEDULER (FULL RESTORED CONTROLS) */}
+      {/* TAB 2: SCHEDULER */}
       {activeTab === 'planner' && (
         <div>
           <h1 className="text-xl font-black text-lime-400 mb-2">Matchday Scheduler</h1>
@@ -877,7 +990,7 @@ export default function MatchdayApp() {
             </div>
           </div>
 
-          {/* GOALKEEPER ROTATION STRATEGY CARD (RESTORED DUAL GK) */}
+          {/* GOALKEEPER ROTATION STRATEGY CARD */}
           <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
             <label className="block text-xs font-bold text-lime-400 mb-2 uppercase tracking-wider">
               🧤 Goalkeeper Strategy

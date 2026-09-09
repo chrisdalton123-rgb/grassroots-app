@@ -48,6 +48,7 @@ export default function MatchdayApp() {
   const [fixedGkId, setFixedGkId] = useState<string | null>(null);
   const [gkMode, setGkMode] = useState<'fixed' | 'split'>('fixed');
   const [half2GkId, setHalf2GkId] = useState<string | null>(null);
+  const [maxGkOutfieldMins, setMaxGkOutfieldMins] = useState<number>(10); // Capped outfield time for split GKs
   const [rotationIntervalMins, setRotationIntervalMins] = useState<number>(7);
   const [subsPerBatch, setSubsPerBatch] = useState<number>(1);
   const [generatedPlan, setGeneratedPlan] = useState<SubPlanStep[]>([]);
@@ -199,7 +200,7 @@ export default function MatchdayApp() {
     );
   };
 
-  // Improved Projected Minutes Calculator with accurate Split GK accounting
+  // Projected Minutes Calculator with Capped GK Outfield Time
   const getProjectedMinutes = () => {
     const active = squad.filter((p) => availablePlayerIds.includes(p.id));
     if (active.length === 0) return [];
@@ -233,50 +234,29 @@ export default function MatchdayApp() {
         }
       }
     } else if (gkMode === 'split' && fixedGkId && half2GkId) {
-      // Half 1: fixedGkId in goal (gets halfMinutes automatically)
-      minutesMap[fixedGkId] += halfMinutes;
-      let h1Outfield = active.filter((p) => p.id !== fixedGkId);
-      let outfieldCap = pitchCapacity - 1;
-      let currentPitch = h1Outfield.slice(0, outfieldCap);
-      let currentBench = h1Outfield.slice(outfieldCap);
+      // GK 1 gets full Half 1 in Goal + Capped Outfield time in Half 2
+      minutesMap[fixedGkId] += halfMinutes + Math.min(maxGkOutfieldMins, halfMinutes);
+      
+      // GK 2 gets Capped Outfield time in Half 1 + full Half 2 in Goal
+      minutesMap[half2GkId] += halfMinutes + Math.min(maxGkOutfieldMins, halfMinutes);
 
-      for (let m = 1; m <= halfMinutes; m++) {
-        currentPitch.forEach((p) => (minutesMap[p.id] += 1));
-        if (m % rotationIntervalMins === 0 && m < halfMinutes) {
-          for (let i = 0; i < subsPerBatch; i++) {
-            if (currentBench.length === 0 || currentPitch.length === 0) break;
-            const inc = currentBench.shift();
-            const out = currentPitch.shift();
-            if (inc && out) {
-              currentPitch.push(inc);
-              currentBench.push(out);
-            }
-          }
-        }
-      }
+      // Remaining pure outfield squad gets the rest of pitch capacity
+      const pureOutfield = active.filter((p) => p.id !== fixedGkId && p.id !== half2GkId);
+      const remainingPitchSeats = pitchCapacity - 1; // 1 seat for GK
+      
+      if (pureOutfield.length > 0) {
+        // Calculate total outfield minutes pool available for pure outfield players
+        // Total outfield slots * match minutes - outfield mins used by the 2 split GKs
+        const totalOutfieldCapacityMins = remainingPitchSeats * totalMatchMins;
+        const gkOutfieldConsumed = Math.min(maxGkOutfieldMins, halfMinutes) * 2;
+        const netPoolForPureOutfield = totalOutfieldCapacityMins - gkOutfieldConsumed;
+        const fairMinsPerPureOutfield = Math.round(netPoolForPureOutfield / pureOutfield.length);
 
-      // Half 2: half2GkId in goal (gets halfMinutes automatically)
-      minutesMap[half2GkId] += halfMinutes;
-      let h2Outfield = active.filter((p) => p.id !== half2GkId);
-      currentPitch = h2Outfield.slice(0, outfieldCap);
-      currentBench = h2Outfield.slice(outfieldCap);
-
-      for (let m = halfMinutes + 1; m <= totalMatchMins; m++) {
-        currentPitch.forEach((p) => (minutesMap[p.id] += 1));
-        if (m % rotationIntervalMins === 0 && m < totalMatchMins) {
-          for (let i = 0; i < subsPerBatch; i++) {
-            if (currentBench.length === 0 || currentPitch.length === 0) break;
-            const inc = currentBench.shift();
-            const out = currentPitch.shift();
-            if (inc && out) {
-              currentPitch.push(inc);
-              currentBench.push(out);
-            }
-          }
-        }
+        pureOutfield.forEach((p) => {
+          minutesMap[p.id] = fairMinsPerPureOutfield;
+        });
       }
     } else {
-      // Standard rotation with no GK locking
       let currentPitch = active.slice(0, pitchCapacity);
       let currentBench = active.slice(pitchCapacity);
 
@@ -340,7 +320,6 @@ export default function MatchdayApp() {
     let interval = rotationIntervalMins;
 
     while (interval < totalMatchMins) {
-      // Split GK Swap at Half Time
       if (gkMode === 'split' && interval === halfMinutes && half2GkId) {
         const h2Gk = active.find((p) => p.id === half2GkId);
         const h1Gk = active.find((p) => p.id === fixedGkId);
@@ -679,36 +658,56 @@ export default function MatchdayApp() {
                   ))}
               </select>
             ) : (
-              <div className="grid grid-cols-2 gap-2">
-                <div>
-                  <label className="block text-[10px] text-gray-400 mb-1">Half 1 Goalkeeper</label>
-                  <select
-                    value={fixedGkId || ''}
-                    onChange={(e) => setFixedGkId(e.target.value || null)}
-                    className="w-full bg-black border border-gray-800 rounded p-2 text-white text-xs font-bold"
-                  >
-                    <option value="">Select H1 GK</option>
-                    {squad
-                      .filter((p) => availablePlayerIds.includes(p.id))
-                      .map((p) => (
-                        <option key={p.id} value={p.id}>#{p.squad_number} {p.name}</option>
-                      ))}
-                  </select>
+              <div>
+                <div className="grid grid-cols-2 gap-2 mb-3">
+                  <div>
+                    <label className="block text-[10px] text-gray-400 mb-1">Half 1 Goalkeeper</label>
+                    <select
+                      value={fixedGkId || ''}
+                      onChange={(e) => setFixedGkId(e.target.value || null)}
+                      className="w-full bg-black border border-gray-800 rounded p-2 text-white text-xs font-bold"
+                    >
+                      <option value="">Select H1 GK</option>
+                      {squad
+                        .filter((p) => availablePlayerIds.includes(p.id))
+                        .map((p) => (
+                          <option key={p.id} value={p.id}>#{p.squad_number} {p.name}</option>
+                        ))}
+                    </select>
+                  </div>
+                  <div>
+                    <label className="block text-[10px] text-gray-400 mb-1">Half 2 Goalkeeper</label>
+                    <select
+                      value={half2GkId || ''}
+                      onChange={(e) => setHalf2GkId(e.target.value || null)}
+                      className="w-full bg-black border border-gray-800 rounded p-2 text-white text-xs font-bold"
+                    >
+                      <option value="">Select H2 GK</option>
+                      {squad
+                        .filter((p) => availablePlayerIds.includes(p.id))
+                        .map((p) => (
+                          <option key={p.id} value={p.id}>#{p.squad_number} {p.name}</option>
+                        ))}
+                    </select>
+                  </div>
                 </div>
-                <div>
-                  <label className="block text-[10px] text-gray-400 mb-1">Half 2 Goalkeeper</label>
-                  <select
-                    value={half2GkId || ''}
-                    onChange={(e) => setHalf2GkId(e.target.value || null)}
-                    className="w-full bg-black border border-gray-800 rounded p-2 text-white text-xs font-bold"
-                  >
-                    <option value="">Select H2 GK</option>
-                    {squad
-                      .filter((p) => availablePlayerIds.includes(p.id))
-                      .map((p) => (
-                        <option key={p.id} value={p.id}>#{p.squad_number} {p.name}</option>
-                      ))}
-                  </select>
+
+                {/* NEW: GK Outfield Time Cap Control */}
+                <div className="p-2.5 bg-black rounded-lg border border-gray-800">
+                  <div className="flex justify-between items-center text-xs">
+                    <span className="font-bold text-gray-300">Max Outfield Mins for GKs:</span>
+                    <select
+                      value={maxGkOutfieldMins}
+                      onChange={(e) => setMaxGkOutfieldMins(parseInt(e.target.value, 10))}
+                      className="bg-gray-900 border border-gray-700 rounded p-1 text-lime-400 font-bold"
+                    >
+                      <option value={5}>5 mins max</option>
+                      <option value={8}>8 mins max</option>
+                      <option value={10}>10 mins max (Recommended)</option>
+                      <option value={12}>12 mins max</option>
+                      <option value={15}>15 mins max</option>
+                    </select>
+                  </div>
                 </div>
               </div>
             )}

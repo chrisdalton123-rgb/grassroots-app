@@ -10,6 +10,13 @@ type Player = {
   preferred_position: string;
   seconds_played: number;
   current_position: string;
+  isAvailable?: boolean;
+};
+
+type SubPlanStep = {
+  minute: number;
+  offPlayer: string;
+  onPlayer: string;
 };
 
 // Current FA Grassroots Regulations & Formats
@@ -23,21 +30,24 @@ const AGE_PRESETS: Record<string, { pitchCount: number; halfMins: number; label:
 };
 
 export default function MatchdayApp() {
-  const [activeTab, setActiveTab] = useState<'matchday' | 'squad'>('matchday');
+  const [activeTab, setActiveTab] = useState<'matchday' | 'planner' | 'squad'>('matchday');
   const [squad, setSquad] = useState<Player[]>([]);
   const [pitchPlayers, setPitchPlayers] = useState<Player[]>([]);
   const [subBench, setSubBench] = useState<Player[]>([]);
   const [selectedOnPitch, setSelectedOnPitch] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Carousel Specific State
-  const [carouselPitches, setCarouselPitches] = useState<number>(2);
-
-  // Match & Format Settings State
+  // Match & Format Settings
   const [ageGroup, setAgeGroup] = useState<string>('U8-U9');
   const [pitchCapacity, setPitchCapacity] = useState<number>(5);
   const [halfMinutes, setHalfMinutes] = useState<number>(20);
+  const [carouselPitches, setCarouselPitches] = useState<number>(2);
   const [showSettings, setShowSettings] = useState<boolean>(false);
+
+  // Planner States
+  const [availablePlayerIds, setAvailablePlayerIds] = useState<string[]>([]);
+  const [rotationIntervalMins, setRotationIntervalMins] = useState<number>(7);
+  const [generatedPlan, setGeneratedPlan] = useState<SubPlanStep[]>([]);
 
   // New Player Form State
   const [newName, setNewName] = useState('');
@@ -86,6 +96,7 @@ export default function MatchdayApp() {
       }));
 
       setSquad(formatted);
+      setAvailablePlayerIds(formatted.map((p) => p.id));
       setPitchPlayers(formatted.slice(0, pitchCapacity));
       setSubBench(formatted.slice(pitchCapacity));
     }
@@ -96,7 +107,6 @@ export default function MatchdayApp() {
     loadSquad();
   }, []);
 
-  // Change FA Match Format Preset
   const applyPreset = (presetKey: string) => {
     setAgeGroup(presetKey);
     const preset = AGE_PRESETS[presetKey];
@@ -107,8 +117,9 @@ export default function MatchdayApp() {
       setSecondsRemaining(preset.halfMins * 60);
       setIsClockRunning(false);
 
-      setPitchPlayers(squad.slice(0, capacity));
-      setSubBench(squad.slice(capacity));
+      const activeSquad = squad.filter((p) => availablePlayerIds.includes(p.id));
+      setPitchPlayers(activeSquad.slice(0, capacity));
+      setSubBench(activeSquad.slice(capacity));
     }
   };
 
@@ -133,7 +144,6 @@ export default function MatchdayApp() {
     };
   }, [isClockRunning, secondsRemaining]);
 
-  // Handle Touchline Substitutions
   const handleSubSwap = (benchPlayerId: string) => {
     if (!selectedOnPitch) return;
     const onPitchIndex = pitchPlayers.findIndex((p) => p.id === selectedOnPitch);
@@ -153,16 +163,55 @@ export default function MatchdayApp() {
     setSelectedOnPitch(null);
   };
 
-  // Rotate Carousel Pitch Players
-  const handleCarouselRotate = () => {
-    if (pitchPlayers.length < 2) return;
-    const rotated = [...pitchPlayers];
-    const first = rotated.shift();
-    if (first) rotated.push(first);
-    setPitchPlayers(rotated);
+  const togglePlayerAvailability = (id: string) => {
+    setAvailablePlayerIds((prev) =>
+      prev.includes(id) ? prev.filter((pId) => pId !== id) : [...prev, id]
+    );
   };
 
-  // Add New Player
+  // Generate Match Setup & Substitution Timetable
+  const handleGenerateMatchPlan = () => {
+    const active = squad.filter((p) => availablePlayerIds.includes(p.id));
+    if (active.length < pitchCapacity) return;
+
+    // Lineup: Sort available players with goalkeeper first
+    const startingPitch = active.slice(0, pitchCapacity);
+    const startingBench = active.slice(pitchCapacity);
+
+    setPitchPlayers(startingPitch);
+    setSubBench(startingBench);
+
+    // Build Substitution Schedule
+    const plan: SubPlanStep[] = [];
+    const totalMatchMins = halfMinutes * 2;
+    let currentBenchQueue = [...startingBench];
+    let currentPitchQueue = [...startingPitch];
+
+    if (currentBenchQueue.length > 0) {
+      let interval = rotationIntervalMins;
+      let stepIndex = 0;
+
+      while (interval < totalMatchMins) {
+        const offPlayer = currentPitchQueue[stepIndex % currentPitchQueue.length];
+        const onPlayer = currentBenchQueue[stepIndex % currentBenchQueue.length];
+
+        if (offPlayer && onPlayer) {
+          plan.push({
+            minute: interval,
+            offPlayer: `#${offPlayer.squad_number} ${offPlayer.name}`,
+            onPlayer: `#${onPlayer.squad_number} ${onPlayer.name}`,
+          });
+        }
+
+        stepIndex++;
+        interval += rotationIntervalMins;
+      }
+    }
+
+    setGeneratedPlan(plan);
+    setActiveTab('matchday');
+  };
+
   const handleAddPlayer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName || !newNumber) return;
@@ -182,7 +231,6 @@ export default function MatchdayApp() {
     }
   };
 
-  // Delete Player
   const handleDeletePlayer = async (id: string) => {
     const { error } = await supabase.from('players').delete().eq('id', id);
     if (!error) loadSquad();
@@ -242,35 +290,6 @@ export default function MatchdayApp() {
                 ))}
               </div>
 
-              {/* U7 Carousel Count Controls */}
-              {ageGroup === 'U7' && (
-                <div className="p-3 bg-black rounded-lg border border-lime-500/30 mb-3">
-                  <label className="block text-lime-400 font-bold mb-1">
-                    Active 3v3 Mini-Pitches (Festival Mode):
-                  </label>
-                  <div className="flex gap-2 mt-2">
-                    {[2, 3, 4].map((count) => (
-                      <button
-                        key={count}
-                        onClick={() => {
-                          setCarouselPitches(count);
-                          setPitchCapacity(count * 3);
-                          setPitchPlayers(squad.slice(0, count * 3));
-                          setSubBench(squad.slice(count * 3));
-                        }}
-                        className={`flex-1 py-2 rounded font-bold border ${
-                          carouselPitches === count
-                            ? 'bg-lime-500 text-black border-lime-400'
-                            : 'bg-gray-900 border-gray-800 text-gray-400'
-                        }`}
-                      >
-                        {count} Pitches ({count * 3} Players)
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
               <button
                 onClick={() => setShowSettings(false)}
                 className="w-full mt-1 bg-gray-800 text-white font-bold p-2 rounded hover:bg-gray-700"
@@ -290,113 +309,79 @@ export default function MatchdayApp() {
                 {formatTime(secondsRemaining)}
               </h1>
             </div>
-            <div className="flex gap-2">
-              {ageGroup === 'U7' && (
-                <button
-                  onClick={handleCarouselRotate}
-                  className="px-3 py-3 font-bold text-xs bg-amber-500 text-black rounded-lg active:scale-95"
-                >
-                  🔄 ROTATE
-                </button>
-              )}
-              <button
-                onClick={() => setIsClockRunning(!isClockRunning)}
-                className={`px-5 py-3 font-black text-sm rounded-lg active:scale-95 transition-all ${
-                  isClockRunning ? 'bg-red-500 text-white' : 'bg-lime-500 text-black'
-                }`}
-              >
-                {isClockRunning ? 'PAUSE' : 'START'}
-              </button>
-            </div>
+            <button
+              onClick={() => setIsClockRunning(!isClockRunning)}
+              className={`px-5 py-3 font-black text-sm rounded-lg active:scale-95 transition-all ${
+                isClockRunning ? 'bg-red-500 text-white' : 'bg-lime-500 text-black'
+              }`}
+            >
+              {isClockRunning ? 'PAUSE' : 'START'}
+            </button>
           </div>
 
-          {/* U7 CAROUSEL MULTI-PITCH DISPLAY */}
-          {ageGroup === 'U7' ? (
-            <div className="mb-6 space-y-4">
-              {Array.from({ length: carouselPitches }).map((_, pitchIdx) => {
-                const pitchGroup = pitchPlayers.slice(pitchIdx * 3, pitchIdx * 3 + 3);
-                const pitchLetters = ['A', 'B', 'C', 'D'];
-
-                return (
-                  <div key={pitchIdx} className="bg-gray-900 p-3.5 rounded-xl border border-gray-800">
-                    <h3 className="text-xs uppercase font-extrabold text-lime-400 mb-2 flex justify-between">
-                      <span>🏟️ Mini-Pitch {pitchLetters[pitchIdx]} (3v3)</span>
-                      <span className="text-gray-400">{pitchGroup.length}/3 Players</span>
-                    </h3>
-                    <div className="grid grid-cols-3 gap-2">
-                      {pitchGroup.map((player) => {
-                        const isSelected = selectedOnPitch === player.id;
-                        return (
-                          <button
-                            key={player.id}
-                            onClick={() => setSelectedOnPitch(isSelected ? null : player.id)}
-                            className={`p-2.5 rounded-lg border-2 text-left transition-all ${
-                              isSelected
-                                ? 'bg-yellow-500 border-yellow-300 text-black scale-102 shadow-lg'
-                                : 'bg-black border-gray-800 text-white'
-                            }`}
-                          >
-                            <div className="font-extrabold text-xs truncate">
-                              #{player.squad_number} {player.name}
-                            </div>
-                            <div className="text-[10px] font-mono text-lime-400 opacity-90 mt-1">
-                              {formatPlayerMins(player.seconds_played)}
-                            </div>
-                          </button>
-                        );
-                      })}
-                    </div>
+          {/* Generated Rotation Schedule Widget */}
+          {generatedPlan.length > 0 && (
+            <div className="bg-gray-900 p-3.5 rounded-xl border border-lime-500/40 mb-4">
+              <h3 className="text-xs font-black text-lime-400 mb-2 uppercase tracking-wider">
+                ⏱️ Pre-Planned Sub Schedule
+              </h3>
+              <div className="flex gap-2 overflow-x-auto pb-1 text-xs">
+                {generatedPlan.map((step, idx) => (
+                  <div key={idx} className="bg-black border border-gray-800 p-2 rounded shrink-0 min-w-[120px]">
+                    <span className="text-[10px] font-mono text-lime-400 block">MIN {step.minute}'</span>
+                    <span className="text-red-400 block font-bold text-[11px]">OFF: {step.offPlayer}</span>
+                    <span className="text-lime-400 block font-bold text-[11px]">ON: {step.onPlayer}</span>
                   </div>
-                );
-              })}
-            </div>
-          ) : (
-            /* STANDARD PITCH DISPLAY (U8-U15) */
-            <div className="mb-6">
-              <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-2 font-bold flex justify-between">
-                <span>On Pitch ({pitchPlayers.length}/{pitchCapacity})</span>
-                <span className="text-amber-400">🔥 High Mins Alert</span>
-              </h2>
-              <div className="grid grid-cols-2 gap-3">
-                {pitchPlayers.map((player) => {
-                  const isSelected = selectedOnPitch === player.id;
-                  const isHighTime = player.seconds_played > 0 && player.seconds_played === highestPitchSeconds;
-
-                  return (
-                    <button
-                      key={player.id}
-                      onClick={() => setSelectedOnPitch(isSelected ? null : player.id)}
-                      className={`p-3.5 rounded-xl border-2 text-left transition-all relative ${
-                        isSelected
-                          ? 'bg-yellow-500 border-yellow-300 text-black scale-102 shadow-lg'
-                          : isHighTime
-                          ? 'bg-gray-900 border-amber-500/60 text-white'
-                          : 'bg-gray-900 border-gray-800 text-white'
-                      }`}
-                    >
-                      <div className="flex justify-between items-center mb-1">
-                        <span className="font-extrabold text-base">
-                          #{player.squad_number} {player.name}
-                        </span>
-                        <span className={`text-xs px-2 py-0.5 rounded font-black ${isSelected ? 'bg-black text-yellow-500' : 'bg-gray-800 text-lime-400'}`}>
-                          {player.current_position}
-                        </span>
-                      </div>
-
-                      <div className="flex justify-between items-center text-xs font-mono opacity-90 mt-2">
-                        <span>{formatPlayerMins(player.seconds_played)} played</span>
-                        {isHighTime && !isSelected && (
-                          <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] px-1.5 py-0.5 rounded font-bold">
-                            REST NEXT
-                          </span>
-                        )}
-                      </div>
-                    </button>
-                  );
-                })}
+                ))}
               </div>
             </div>
           )}
+
+          {/* Standard Pitch Display */}
+          <div className="mb-6">
+            <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-2 font-bold flex justify-between">
+              <span>On Pitch ({pitchPlayers.length}/{pitchCapacity})</span>
+              <span className="text-amber-400">🔥 High Mins Alert</span>
+            </h2>
+            <div className="grid grid-cols-2 gap-3">
+              {pitchPlayers.map((player) => {
+                const isSelected = selectedOnPitch === player.id;
+                const isHighTime = player.seconds_played > 0 && player.seconds_played === highestPitchSeconds;
+
+                return (
+                  <button
+                    key={player.id}
+                    onClick={() => setSelectedOnPitch(isSelected ? null : player.id)}
+                    className={`p-3.5 rounded-xl border-2 text-left transition-all relative ${
+                      isSelected
+                        ? 'bg-yellow-500 border-yellow-300 text-black scale-102 shadow-lg'
+                        : isHighTime
+                        ? 'bg-gray-900 border-amber-500/60 text-white'
+                        : 'bg-gray-900 border-gray-800 text-white'
+                    }`}
+                  >
+                    <div className="flex justify-between items-center mb-1">
+                      <span className="font-extrabold text-base">
+                        #{player.squad_number} {player.name}
+                      </span>
+                      <span className={`text-xs px-2 py-0.5 rounded font-black ${isSelected ? 'bg-black text-yellow-500' : 'bg-gray-800 text-lime-400'}`}>
+                        {player.current_position}
+                      </span>
+                    </div>
+
+                    <div className="flex justify-between items-center text-xs font-mono opacity-90 mt-2">
+                      <span>{formatPlayerMins(player.seconds_played)} played</span>
+                      {isHighTime && !isSelected && (
+                        <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] px-1.5 py-0.5 rounded font-bold">
+                          REST NEXT
+                        </span>
+                      )}
+                    </div>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
 
           {/* Substitutes Bench */}
           <div className="bg-gray-900 p-4 rounded-xl border border-gray-800">
@@ -443,7 +428,67 @@ export default function MatchdayApp() {
         </div>
       )}
 
-      {/* TAB 2: SQUAD MANAGEMENT */}
+      {/* TAB 2: MATCHDAY PLANNER & ROTATION SCHEDULER */}
+      {activeTab === 'planner' && (
+        <div>
+          <h1 className="text-xl font-black text-lime-400 mb-2">Matchday Scheduler</h1>
+          <p className="text-xs text-gray-400 mb-4">
+            Select today's available squad members to generate line-ups and pre-planned sub intervals.
+          </p>
+
+          {/* Availability Selection */}
+          <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
+            <h2 className="text-xs uppercase tracking-widest text-gray-300 font-bold mb-3 flex justify-between">
+              <span>Select Available Players ({availablePlayerIds.length}/{squad.length})</span>
+            </h2>
+            <div className="grid grid-cols-2 gap-2">
+              {squad.map((player) => {
+                const isChecked = availablePlayerIds.includes(player.id);
+                return (
+                  <button
+                    key={player.id}
+                    onClick={() => togglePlayerAvailability(player.id)}
+                    className={`p-2.5 rounded-lg text-left border font-bold text-xs flex justify-between items-center ${
+                      isChecked
+                        ? 'bg-lime-500/10 border-lime-500 text-lime-300'
+                        : 'bg-black border-gray-800 text-gray-500'
+                    }`}
+                  >
+                    <span>#{player.squad_number} {player.name}</span>
+                    <span>{isChecked ? '✓' : '+'}</span>
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Sub Interval Setting */}
+          <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
+            <label className="block text-xs font-bold text-gray-300 mb-2 uppercase tracking-wider">
+              Substitution Rotation Frequency
+            </label>
+            <select
+              value={rotationIntervalMins}
+              onChange={(e) => setRotationIntervalMins(parseInt(e.target.value, 10))}
+              className="w-full bg-black border border-gray-800 rounded-lg p-3 text-white text-xs font-bold focus:outline-none focus:border-lime-400"
+            >
+              <option value={5}>Every 5 minutes</option>
+              <option value={7}>Every 7 minutes (Recommended)</option>
+              <option value={10}>Every 10 minutes</option>
+              <option value={12}>Every 12 minutes</option>
+            </select>
+          </div>
+
+          <button
+            onClick={handleGenerateMatchPlan}
+            className="w-full bg-lime-500 text-black font-black p-4 rounded-xl text-sm active:scale-95 transition-all shadow-lg"
+          >
+            ⚡ GENERATE LINEUP & SUB SCHEDULE
+          </button>
+        </div>
+      )}
+
+      {/* TAB 3: SQUAD MANAGEMENT */}
       {activeTab === 'squad' && (
         <div>
           <h1 className="text-xl font-black text-lime-400 mb-4">Squad Management</h1>
@@ -519,12 +564,20 @@ export default function MatchdayApp() {
           ⚽ MATCHDAY
         </button>
         <button
+          onClick={() => setActiveTab('planner')}
+          className={`flex-1 py-3 font-black text-xs rounded-lg transition-all ${
+            activeTab === 'planner' ? 'bg-lime-500 text-black' : 'text-gray-400'
+          }`}
+        >
+          📅 SCHEDULER
+        </button>
+        <button
           onClick={() => setActiveTab('squad')}
           className={`flex-1 py-3 font-black text-xs rounded-lg transition-all ${
             activeTab === 'squad' ? 'bg-lime-500 text-black' : 'text-gray-400'
           }`}
         >
-          📋 SQUAD MANAGER
+          📋 SQUAD
         </button>
       </div>
     </div>

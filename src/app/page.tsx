@@ -12,9 +12,8 @@ type Player = {
   current_position: string;
 };
 
-// Updated FA Grassroots Formats
 const AGE_PRESETS: Record<string, { pitchCount: number; halfMins: number; label: string }> = {
-  'U7': { pitchCount: 3, halfMins: 10, label: 'U7 (3v3 Carousel — 10m Games)' },
+  'U7': { pitchCount: 3, halfMins: 8, label: 'U7 (3v3 Carousel Festival — Multi-Pitch)' },
   'U8-U9': { pitchCount: 5, halfMins: 20, label: 'U8/U9 (5v5 — 20m Halves)' },
   'U10-U11': { pitchCount: 7, halfMins: 25, label: 'U10/U11 (7v7 — 25m Halves)' },
   'U12-U13': { pitchCount: 9, halfMins: 30, label: 'U12/U13 (9v9 — 30m Halves)' },
@@ -30,10 +29,13 @@ export default function MatchdayApp() {
   const [selectedOnPitch, setSelectedOnPitch] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Match & Format Settings State
-  const [ageGroup, setAgeGroup] = useState<string>('U9-U10');
-  const [pitchCapacity, setPitchCapacity] = useState<number>(7);
-  const [halfMinutes, setHalfMinutes] = useState<number>(25);
+  // Carousel specific state
+  const [carouselPitches, setCarouselPitches] = useState<number>(2); // 2 to 4 mini pitches
+
+  // Format Settings State
+  const [ageGroup, setAgeGroup] = useState<string>('U8-U9');
+  const [pitchCapacity, setPitchCapacity] = useState<number>(5);
+  const [halfMinutes, setHalfMinutes] = useState<number>(20);
   const [showSettings, setShowSettings] = useState<boolean>(false);
 
   // New Player Form State
@@ -42,7 +44,7 @@ export default function MatchdayApp() {
   const [newPosition, setNewPosition] = useState('Midfielder');
 
   // Match clock states
-  const [secondsRemaining, setSecondsRemaining] = useState<number>(25 * 60);
+  const [secondsRemaining, setSecondsRemaining] = useState<number>(20 * 60);
   const [isClockRunning, setIsClockRunning] = useState(false);
   const [currentPeriod, setCurrentPeriod] = useState(1);
 
@@ -57,12 +59,10 @@ export default function MatchdayApp() {
     return `${mins} mins`;
   };
 
-  // Lowest/Highest minutes helpers
   const allPlayers = [...pitchPlayers, ...subBench];
   const lowestSeconds = allPlayers.length > 0 ? Math.min(...allPlayers.map((p) => p.seconds_played)) : 0;
   const highestPitchSeconds = pitchPlayers.length > 0 ? Math.max(...pitchPlayers.map((p) => p.seconds_played)) : 0;
 
-  // Load Squad from Supabase
   const loadSquad = async () => {
     setLoading(true);
     const { data, error } = await supabase
@@ -93,23 +93,21 @@ export default function MatchdayApp() {
     loadSquad();
   }, []);
 
-  // Update pitch layout when format settings change
   const applyPreset = (presetKey: string) => {
     setAgeGroup(presetKey);
     const preset = AGE_PRESETS[presetKey];
     if (preset) {
-      setPitchCapacity(preset.pitchCount);
+      const capacity = presetKey === 'U7' ? carouselPitches * 3 : preset.pitchCount;
+      setPitchCapacity(capacity);
       setHalfMinutes(preset.halfMins);
       setSecondsRemaining(preset.halfMins * 60);
       setIsClockRunning(false);
 
-      // Re-partition pitch vs bench
-      setPitchPlayers(squad.slice(0, preset.pitchCount));
-      setSubBench(squad.slice(preset.pitchCount));
+      setPitchPlayers(squad.slice(0, capacity));
+      setSubBench(squad.slice(capacity));
     }
   };
 
-  // Live Timer
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
     if (isClockRunning && secondsRemaining > 0) {
@@ -147,6 +145,15 @@ export default function MatchdayApp() {
     setPitchPlayers(newPitch);
     setSubBench(newBench);
     setSelectedOnPitch(null);
+  };
+
+  // Carousel Rotation - shift pitch players round-robin style
+  const handleCarouselRotate = () => {
+    if (pitchPlayers.length < 2) return;
+    const rotated = [...pitchPlayers];
+    const first = rotated.shift();
+    if (first) rotated.push(first);
+    setPitchPlayers(rotated);
   };
 
   const handleAddPlayer = async (e: React.FormEvent) => {
@@ -191,11 +198,11 @@ export default function MatchdayApp() {
               onClick={() => setShowSettings(!showSettings)}
               className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold px-2.5 py-1 rounded border border-gray-700"
             >
-              ⚙️ CHANGE FORMAT
+              ⚙️ SETTINGS
             </button>
           </div>
 
-          {/* Settings Modal Drawer */}
+          {/* Settings Drawer */}
           {showSettings && (
             <div className="bg-gray-900 border border-lime-500/50 p-4 rounded-xl mb-4 text-xs">
               <h3 className="font-extrabold text-sm text-lime-400 mb-3 uppercase tracking-wider">
@@ -217,34 +224,38 @@ export default function MatchdayApp() {
                 ))}
               </div>
 
-              {/* Custom Adjustments */}
-              <div className="pt-3 border-t border-gray-800 flex gap-2">
-                <div className="flex-1">
-                  <label className="block text-gray-400 mb-1 font-bold">Pitch Size</label>
-                  <input
-                    type="number"
-                    value={pitchCapacity}
-                    onChange={(e) => setPitchCapacity(parseInt(e.target.value) || 5)}
-                    className="w-full bg-black border border-gray-800 p-2 rounded text-white font-mono"
-                  />
+              {/* U7 Carousel Mini-Pitch Count Selector */}
+              {ageGroup === 'U7' && (
+                <div className="p-3 bg-black rounded-lg border border-lime-500/30 mb-3">
+                  <label className="block text-lime-400 font-bold mb-1">
+                    Active 3v3 Mini-Pitches (Festival Mode):
+                  </label>
+                  <div className="flex gap-2 mt-2">
+                    {[2, 3, 4].map((count) => (
+                      <button
+                        key={count}
+                        onClick={() => {
+                          setCarouselPitches(count);
+                          setPitchCapacity(count * 3);
+                          setPitchPlayers(squad.slice(0, count * 3));
+                          setSubBench(squad.slice(count * 3));
+                        }}
+                        className={`flex-1 py-2 rounded font-bold border ${
+                          carouselPitches === count
+                            ? 'bg-lime-500 text-black border-lime-400'
+                            : 'bg-gray-900 border-gray-800 text-gray-400'
+                        }`}
+                      >
+                        {count} Pitches ({count * 3} Players)
+                      </button>
+                    ))}
+                  </div>
                 </div>
-                <div className="flex-1">
-                  <label className="block text-gray-400 mb-1 font-bold">Half Mins</label>
-                  <input
-                    type="number"
-                    value={halfMinutes}
-                    onChange={(e) => {
-                      const mins = parseInt(e.target.value) || 10;
-                      setHalfMinutes(mins);
-                      setSecondsRemaining(mins * 60);
-                    }}
-                    className="w-full bg-black border border-gray-800 p-2 rounded text-white font-mono"
-                  />
-                </div>
-              </div>
+              )}
+
               <button
                 onClick={() => setShowSettings(false)}
-                className="w-full mt-3 bg-gray-800 text-white font-bold p-2 rounded hover:bg-gray-700"
+                className="w-full mt-1 bg-gray-800 text-white font-bold p-2 rounded hover:bg-gray-700"
               >
                 CLOSE SETTINGS
               </button>
@@ -255,69 +266,121 @@ export default function MatchdayApp() {
           <div className="flex justify-between items-center bg-gray-900 p-4 rounded-xl mb-4 border border-gray-800">
             <div>
               <span className="text-xs text-gray-400 block font-bold uppercase tracking-wider">
-                Half {currentPeriod} — Live
+                {ageGroup === 'U7' ? `Mini-Game ${currentPeriod}` : `Half ${currentPeriod}`} — Live
               </span>
               <h1 className="text-2xl font-black text-lime-400 font-mono tracking-tight">
-                H{currentPeriod} — {formatTime(secondsRemaining)}
+                {formatTime(secondsRemaining)}
               </h1>
             </div>
-            <button
-              onClick={() => setIsClockRunning(!isClockRunning)}
-              className={`px-5 py-3 font-black text-sm rounded-lg active:scale-95 transition-all ${
-                isClockRunning ? 'bg-red-500 text-white' : 'bg-lime-500 text-black'
-              }`}
-            >
-              {isClockRunning ? 'PAUSE CLOCK' : 'START CLOCK'}
-            </button>
+            <div className="flex gap-2">
+              {ageGroup === 'U7' && (
+                <button
+                  onClick={handleCarouselRotate}
+                  className="px-3 py-3 font-bold text-xs bg-amber-500 text-black rounded-lg active:scale-95"
+                >
+                  🔄 ROTATE
+                </button>
+              )}
+              <button
+                onClick={() => setIsClockRunning(!isClockRunning)}
+                className={`px-5 py-3 font-black text-sm rounded-lg active:scale-95 transition-all ${
+                  isClockRunning ? 'bg-red-500 text-white' : 'bg-lime-500 text-black'
+                }`}
+              >
+                {isClockRunning ? 'PAUSE' : 'START'}
+              </button>
+            </div>
           </div>
 
-          {/* Pitch Section */}
-          <div className="mb-6">
-            <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-2 font-bold flex justify-between">
-              <span>On Pitch ({pitchPlayers.length}/{pitchCapacity})</span>
-              <span className="text-amber-400">🔥 High Mins Alert</span>
-            </h2>
-            <div className="grid grid-cols-2 gap-3">
-              {pitchPlayers.map((player) => {
-                const isSelected = selectedOnPitch === player.id;
-                const isHighTime = player.seconds_played > 0 && player.seconds_played === highestPitchSeconds;
+          {/* U7 CAROUSEL MULTI-PITCH DISPLAY */}
+          {ageGroup === 'U7' ? (
+            <div className="mb-6 space-y-4">
+              {Array.from({ length: carouselPitches }).map((_, pitchIdx) => {
+                const pitchGroup = pitchPlayers.slice(pitchIdx * 3, pitchIdx * 3 + 3);
+                const pitchLetters = ['A', 'B', 'C', 'D'];
 
                 return (
-                  <button
-                    key={player.id}
-                    onClick={() => setSelectedOnPitch(isSelected ? null : player.id)}
-                    className={`p-3.5 rounded-xl border-2 text-left transition-all relative ${
-                      isSelected
-                        ? 'bg-yellow-500 border-yellow-300 text-black scale-102 shadow-lg'
-                        : isHighTime
-                        ? 'bg-gray-900 border-amber-500/60 text-white'
-                        : 'bg-gray-900 border-gray-800 text-white'
-                    }`}
-                  >
-                    <div className="flex justify-between items-center mb-1">
-                      <span className="font-extrabold text-base">
-                        #{player.squad_number} {player.name}
-                      </span>
-                      <span className={`text-xs px-2 py-0.5 rounded font-black ${isSelected ? 'bg-black text-yellow-500' : 'bg-gray-800 text-lime-400'}`}>
-                        {player.current_position}
-                      </span>
+                  <div key={pitchIdx} className="bg-gray-900 p-3.5 rounded-xl border border-gray-800">
+                    <h3 className="text-xs uppercase font-extrabold text-lime-400 mb-2 flex justify-between">
+                      <span>🏟️ Mini-Pitch {pitchLetters[pitchIdx]} (3v3)</span>
+                      <span className="text-gray-400">{pitchGroup.length}/3 Players</span>
+                    </h3>
+                    <div className="grid grid-cols-3 gap-2">
+                      {pitchGroup.map((player) => {
+                        const isSelected = selectedOnPitch === player.id;
+                        return (
+                          <button
+                            key={player.id}
+                            onClick={() => setSelectedOnPitch(isSelected ? null : player.id)}
+                            className={`p-2.5 rounded-lg border-2 text-left transition-all ${
+                              isSelected
+                                ? 'bg-yellow-500 border-yellow-300 text-black scale-102 shadow-lg'
+                                : 'bg-black border-gray-800 text-white'
+                            }`}
+                          >
+                            <div className="font-extrabold text-xs truncate">
+                              #{player.squad_number} {player.name}
+                            </div>
+                            <div className="text-[10px] font-mono text-lime-400 opacity-90 mt-1">
+                              {formatPlayerMins(player.seconds_played)}
+                            </div>
+                          </button>
+                        );
+                      })}
                     </div>
-
-                    <div className="flex justify-between items-center text-xs font-mono opacity-90 mt-2">
-                      <span>{formatPlayerMins(player.seconds_played)} played</span>
-                      {isHighTime && !isSelected && (
-                        <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] px-1.5 py-0.5 rounded font-bold">
-                          REST NEXT
-                        </span>
-                      )}
-                    </div>
-                  </button>
+                  </div>
                 );
               })}
             </div>
-          </div>
+          ) : (
+            /* STANDARD PITCH DISPLAY (U8-U15) */
+            <div className="mb-6">
+              <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-2 font-bold flex justify-between">
+                <span>On Pitch ({pitchPlayers.length}/{pitchCapacity})</span>
+                <span className="text-amber-400">🔥 High Mins Alert</span>
+              </h2>
+              <div className="grid grid-cols-2 gap-3">
+                {pitchPlayers.map((player) => {
+                  const isSelected = selectedOnPitch === player.id;
+                  const isHighTime = player.seconds_played > 0 && player.seconds_played === highestPitchSeconds;
 
-          {/* Bench Section */}
+                  return (
+                    <button
+                      key={player.id}
+                      onClick={() => setSelectedOnPitch(isSelected ? null : player.id)}
+                      className={`p-3.5 rounded-xl border-2 text-left transition-all relative ${
+                        isSelected
+                          ? 'bg-yellow-500 border-yellow-300 text-black scale-102 shadow-lg'
+                          : isHighTime
+                          ? 'bg-gray-900 border-amber-500/60 text-white'
+                          : 'bg-gray-900 border-gray-800 text-white'
+                      }`}
+                    >
+                      <div className="flex justify-between items-center mb-1">
+                        <span className="font-extrabold text-base">
+                          #{player.squad_number} {player.name}
+                        </span>
+                        <span className={`text-xs px-2 py-0.5 rounded font-black ${isSelected ? 'bg-black text-yellow-500' : 'bg-gray-800 text-lime-400'}`}>
+                          {player.current_position}
+                        </span>
+                      </div>
+
+                      <div className="flex justify-between items-center text-xs font-mono opacity-90 mt-2">
+                        <span>{formatPlayerMins(player.seconds_played)} played</span>
+                        {isHighTime && !isSelected && (
+                          <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] px-1.5 py-0.5 rounded font-bold">
+                            REST NEXT
+                          </span>
+                        )}
+                      </div>
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+          )}
+
+          {/* Substitutes Bench */}
           <div className="bg-gray-900 p-4 rounded-xl border border-gray-800">
             <h2 className="text-xs uppercase tracking-widest text-amber-400 mb-2 font-bold flex justify-between">
               <span>Substitutes Bench ({subBench.length})</span>

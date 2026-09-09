@@ -14,9 +14,13 @@ type Player = {
 };
 
 type SubPlanStep = {
+  id: string;
   minute: number;
-  offPlayer: string;
-  onPlayer: string;
+  offPlayerId: string;
+  offPlayerName: string;
+  onPlayerId: string;
+  onPlayerName: string;
+  status: 'pending' | 'completed';
 };
 
 type MatchGoal = {
@@ -55,6 +59,7 @@ export default function MatchdayApp() {
   const [playerOfTheMatch, setPlayerOfTheMatch] = useState<string | null>(null);
   const [opponentName, setOpponentName] = useState<string>('Opponent');
   const [showGoalLog, setShowGoalLog] = useState<boolean>(false);
+  const [showArchivedSubs, setShowArchivedSubs] = useState<boolean>(false);
 
   // Planner States
   const [availablePlayerIds, setAvailablePlayerIds] = useState<string[]>([]);
@@ -77,14 +82,12 @@ export default function MatchdayApp() {
   const [currentPeriod, setCurrentPeriod] = useState(1);
   const [wakeLock, setWakeLock] = useState<any>(null);
 
-  // Trigger Phone Haptic Feedback
   const triggerHaptic = () => {
     if (typeof window !== 'undefined' && 'vibrate' in navigator) {
       navigator.vibrate(40);
     }
   };
 
-  // Keep Screen Awake Lock
   const requestWakeLock = async () => {
     try {
       if ('wakeLock' in navigator) {
@@ -116,6 +119,9 @@ export default function MatchdayApp() {
 
   const ourGoalsCount = goals.filter((g) => !g.isOpponent).length;
   const opponentGoalsCount = goals.filter((g) => g.isOpponent).length;
+
+  const pendingPlanSteps = generatedPlan.filter((step) => step.status === 'pending');
+  const completedPlanSteps = generatedPlan.filter((step) => step.status === 'completed');
 
   const allPlayers = [...pitchPlayers, ...subBench];
   const lowestSeconds = allPlayers.length > 0 ? Math.min(...allPlayers.map((p) => p.seconds_played)) : 0;
@@ -198,7 +204,6 @@ export default function MatchdayApp() {
     setIsClockRunning(false);
   };
 
-  // Timer & Wake Lock Effect
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
     if (isClockRunning && secondsRemaining > 0) {
@@ -250,6 +255,34 @@ export default function MatchdayApp() {
     setPitchPlayers(newPitch);
     setSubBench(newBench);
     setSelectedOnPitch(null);
+  };
+
+  // ONE-TAP APPLY PRE-PLANNED SCHEDULED SUB
+  const handleApplyScheduledSub = (stepId: string) => {
+    triggerHaptic();
+    const step = generatedPlan.find((s) => s.id === stepId);
+    if (!step) return;
+
+    const onPitchIndex = pitchPlayers.findIndex((p) => p.id === step.offPlayerId);
+    const benchIndex = subBench.findIndex((p) => p.id === step.onPlayerId);
+
+    if (onPitchIndex !== -1 && benchIndex !== -1) {
+      const newPitch = [...pitchPlayers];
+      const newBench = [...subBench];
+      const outgoing = newPitch[onPitchIndex];
+      const incoming = newBench[benchIndex];
+
+      newPitch[onPitchIndex] = { ...incoming, current_position: outgoing.current_position };
+      newBench[benchIndex] = { ...outgoing, current_position: 'SUB' };
+
+      setPitchPlayers(newPitch);
+      setSubBench(newBench);
+    }
+
+    // Archive completed step
+    setGeneratedPlan((prev) =>
+      prev.map((s) => (s.id === stepId ? { ...s, status: 'completed' } : s))
+    );
   };
 
   const handleLogGoal = (playerName: string, isOpponent = false) => {
@@ -398,9 +431,13 @@ export default function MatchdayApp() {
 
         if (h2Gk && h1Gk) {
           plan.push({
+            id: Math.random().toString(),
             minute: interval,
-            offPlayer: `#${h1Gk.squad_number} ${h1Gk.name} (GK -> OUTFIELD)`,
-            onPlayer: `#${h2Gk.squad_number} ${h2Gk.name} (OUTFIELD -> GOAL)`,
+            offPlayerId: h1Gk.id,
+            offPlayerName: `#${h1Gk.squad_number} ${h1Gk.name} (GK)`,
+            onPlayerId: h2Gk.id,
+            onPlayerName: `#${h2Gk.squad_number} ${h2Gk.name} (GK)`,
+            status: 'pending',
           });
         }
       }
@@ -413,9 +450,13 @@ export default function MatchdayApp() {
 
         if (incoming && outgoing) {
           plan.push({
+            id: Math.random().toString(),
             minute: interval,
-            offPlayer: `#${outgoing.squad_number} ${outgoing.name}`,
-            onPlayer: `#${incoming.squad_number} ${incoming.name}`,
+            offPlayerId: outgoing.id,
+            offPlayerName: `#${outgoing.squad_number} ${outgoing.name}`,
+            onPlayerId: incoming.id,
+            onPlayerName: `#${incoming.squad_number} ${incoming.name}`,
+            status: 'pending',
           });
 
           currentOutfieldPitch.push(incoming);
@@ -430,7 +471,6 @@ export default function MatchdayApp() {
     setActiveTab('matchday');
   };
 
-  // Generate WhatsApp Shareable Summary Text
   const generateWhatsAppSummary = () => {
     let text = `⚽ *MATCHDAY RECAP — CO-GAFFER*\n`;
     text += `Vs. ${opponentName} (${ageGroup})\n`;
@@ -560,7 +600,6 @@ export default function MatchdayApp() {
           {/* SCOREBOARD & MATCH CLOCK HEADER */}
           <div className="bg-gray-900 p-4 rounded-xl mb-4 border border-gray-800">
             <div className="flex justify-between items-center mb-3 pb-3 border-b border-gray-800">
-              {/* Scoreboard Display */}
               <div className="flex items-center gap-3">
                 <div className="text-center">
                   <span className="text-[10px] text-gray-400 font-bold block uppercase">OUR TEAM</span>
@@ -573,7 +612,6 @@ export default function MatchdayApp() {
                 </div>
               </div>
 
-              {/* Opponent Goal Log Button */}
               <button
                 onClick={() => handleLogGoal(opponentName, true)}
                 className="px-2.5 py-1.5 bg-red-500/20 text-red-400 border border-red-500/40 rounded font-black text-[10px] active:scale-95"
@@ -633,21 +671,57 @@ export default function MatchdayApp() {
             </div>
           )}
 
-          {/* Pre-Planned Sub Schedule Widget */}
-          {generatedPlan.length > 0 && (
+          {/* ONE-TAP PRE-PLANNED SUB SCHEDULE WIDGET */}
+          {pendingPlanSteps.length > 0 && (
             <div className="bg-gray-900 p-3.5 rounded-xl border border-lime-500/40 mb-4">
-              <h3 className="text-xs font-black text-lime-400 mb-2 uppercase tracking-wider">
-                ⏱️ Pre-Planned Sub Schedule
+              <h3 className="text-xs font-black text-lime-400 mb-2 uppercase tracking-wider flex justify-between items-center">
+                <span>⏱️ Upcoming Pre-Planned Subs ({pendingPlanSteps.length})</span>
+                <span className="text-[10px] text-gray-400 font-normal">Tap to execute</span>
               </h3>
               <div className="flex gap-2 overflow-x-auto pb-1 text-xs">
-                {generatedPlan.map((step, idx) => (
-                  <div key={idx} className="bg-black border border-gray-800 p-2 rounded shrink-0 min-w-[130px]">
-                    <span className="text-[10px] font-mono text-lime-400 block">MIN {step.minute}'</span>
-                    <span className="text-red-400 block font-bold text-[11px]">OFF: {step.offPlayer}</span>
-                    <span className="text-lime-400 block font-bold text-[11px]">ON: {step.onPlayer}</span>
+                {pendingPlanSteps.map((step) => (
+                  <div key={step.id} className="bg-black border border-lime-500/30 p-2.5 rounded-lg shrink-0 min-w-[140px] flex flex-col justify-between">
+                    <div>
+                      <span className="text-[10px] font-mono text-lime-400 font-bold block mb-1">MIN {step.minute}'</span>
+                      <span className="text-red-400 block font-bold text-[11px]">OFF: {step.offPlayerName}</span>
+                      <span className="text-lime-400 block font-bold text-[11px] mb-2">ON: {step.onPlayerName}</span>
+                    </div>
+                    <button
+                      onClick={() => handleApplyScheduledSub(step.id)}
+                      className="w-full bg-lime-500 hover:bg-lime-400 text-black font-black py-1.5 rounded text-[10px] active:scale-95 shadow transition-all"
+                    >
+                      ⚡ EXECUTE SUB
+                    </button>
                   </div>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* ARCHIVED COMPLETED SUBS LOG */}
+          {completedPlanSteps.length > 0 && (
+            <div className="bg-gray-900 p-3 rounded-xl border border-gray-800 mb-4 text-xs">
+              <button
+                onClick={() => setShowArchivedSubs(!showArchivedSubs)}
+                className="w-full flex justify-between items-center font-bold text-gray-400"
+              >
+                <span>📜 Executed Subs History ({completedPlanSteps.length})</span>
+                <span>{showArchivedSubs ? '▲ HIDE' : '▼ VIEW ARCHIVE'}</span>
+              </button>
+
+              {showArchivedSubs && (
+                <div className="mt-2 pt-2 border-t border-gray-800 flex flex-col gap-1.5">
+                  {completedPlanSteps.map((step) => (
+                    <div key={step.id} className="bg-black p-2 rounded border border-gray-850 flex justify-between items-center text-[11px]">
+                      <span className="font-mono text-lime-400 font-bold">{step.minute}'</span>
+                      <span className="text-gray-300">
+                        <span className="text-red-400">{step.offPlayerName}</span> → <span className="text-lime-400">{step.onPlayerName}</span>
+                      </span>
+                      <span className="text-[9px] bg-gray-800 text-lime-400 px-1.5 py-0.5 rounded font-bold">DONE ✓</span>
+                    </div>
+                  ))}
+                </div>
+              )}
             </div>
           )}
 

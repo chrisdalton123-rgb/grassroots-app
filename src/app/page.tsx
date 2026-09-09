@@ -12,6 +12,12 @@ type Player = {
   current_position: string;
   isAvailable?: boolean;
   isInjured?: boolean;
+  isActive?: boolean;
+  // Season aggregate stats
+  total_matches?: number;
+  total_seconds_played?: number;
+  total_goals?: number;
+  total_potm?: number;
 };
 
 type SubPlanStep = {
@@ -31,6 +37,17 @@ type MatchGoal = {
   isOpponent: boolean;
 };
 
+type SavedMatch = {
+  id: string;
+  created_at: string;
+  opponent_name: string;
+  age_group: string;
+  our_score: number;
+  opponent_score: number;
+  player_of_the_match: string | null;
+  match_date: string;
+};
+
 const AGE_PRESETS: Record<string, { pitchCount: number; halfMins: number; label: string }> = {
   'U7': { pitchCount: 3, halfMins: 10, label: 'U7 (3v3 Carousel Festival — Multi-Pitch)' },
   'U8-U9': { pitchCount: 5, halfMins: 20, label: 'U8/U9 (5v5 — 20m Halves)' },
@@ -41,13 +58,14 @@ const AGE_PRESETS: Record<string, { pitchCount: number; halfMins: number; label:
 };
 
 export default function MatchdayApp() {
-  const [activeTab, setActiveTab] = useState<'matchday' | 'planner' | 'squad'>('matchday');
+  const [activeTab, setActiveTab] = useState<'matchday' | 'planner' | 'squad' | 'stats'>('matchday');
   const [squad, setSquad] = useState<Player[]>([]);
   const [pitchPlayers, setPitchPlayers] = useState<Player[]>([]);
   const [subBench, setSubBench] = useState<Player[]>([]);
   const [injuredPlayers, setInjuredPlayers] = useState<Player[]>([]);
   const [selectedOnPitch, setSelectedOnPitch] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [savingMatch, setSavingMatch] = useState(false);
 
   // Match & Format Settings
   const [ageGroup, setAgeGroup] = useState<string>('U8-U9');
@@ -64,7 +82,6 @@ export default function MatchdayApp() {
   const [playerOfTheMatch, setPlayerOfTheMatch] = useState<string | null>(null);
   const [opponentName, setOpponentName] = useState<string>('Opponent');
   const [showGoalLog, setShowGoalLog] = useState<boolean>(false);
-  const [showArchivedSubs, setShowArchivedSubs] = useState<boolean>(false);
 
   // Planner States
   const [availablePlayerIds, setAvailablePlayerIds] = useState<string[]>([]);
@@ -76,10 +93,17 @@ export default function MatchdayApp() {
   const [subsPerBatch, setSubsPerBatch] = useState<number>(1);
   const [generatedPlan, setGeneratedPlan] = useState<SubPlanStep[]>([]);
 
-  // New Player Form State
+  // Squad Management Editing States
   const [newName, setNewName] = useState('');
   const [newNumber, setNewNumber] = useState('');
   const [newPosition, setNewPosition] = useState('Midfielder');
+  const [editingPlayerId, setEditingPlayerId] = useState<string | null>(null);
+  const [editName, setEditName] = useState('');
+  const [editNumber, setEditNumber] = useState('');
+  const [editPosition, setEditPosition] = useState('');
+
+  // Stats & Match History States
+  const [matchHistory, setMatchHistory] = useState<SavedMatch[]>([]);
 
   // Match Clock & Screen Lock States
   const [secondsRemaining, setSecondsRemaining] = useState<number>(20 * 60);
@@ -87,7 +111,6 @@ export default function MatchdayApp() {
   const [currentPeriod, setCurrentPeriod] = useState(1);
   const [wakeLock, setWakeLock] = useState<any>(null);
 
-  // Effective Pitch Capacity considering Powerplay (+1)
   const currentPitchCapacity = isPowerplayActive ? basePitchCapacity + 1 : basePitchCapacity;
 
   const triggerHaptic = () => {
@@ -137,23 +160,49 @@ export default function MatchdayApp() {
 
   const loadSquad = async () => {
     setLoading(true);
-    const { data, error } = await supabase
+    const { data: playersData, error: playersError } = await supabase
       .from('players')
       .select('*')
       .order('squad_number', { ascending: true });
 
-    if (error) {
-      console.error('Error fetching squad:', error);
-    } else if (data) {
-      const formatted: Player[] = data.map((p) => ({
-        id: p.id,
-        name: p.name,
-        squad_number: p.squad_number,
-        preferred_position: p.preferred_position,
-        seconds_played: 0,
-        current_position: p.preferred_position || 'SUB',
-        isInjured: false,
-      }));
+    const { data: statsData } = await supabase
+      .from('match_player_stats')
+      .select('*');
+
+    const { data: matchesData } = await supabase
+      .from('matches')
+      .select('*')
+      .order('created_at', { ascending: false });
+
+    if (matchesData) {
+      setMatchHistory(matchesData);
+    }
+
+    if (playersError) {
+      console.error('Error fetching squad:', playersError);
+    } else if (playersData) {
+      const formatted: Player[] = playersData.map((p) => {
+        const playerStats = statsData?.filter((s) => s.player_id === p.id) || [];
+        const totalMatches = playerStats.length;
+        const totalSecs = playerStats.reduce((acc, curr) => acc + (curr.seconds_played || 0), 0);
+        const totalGoals = playerStats.reduce((acc, curr) => acc + (curr.goals_scored || 0), 0);
+        const totalPotm = playerStats.filter((s) => s.is_potm).length;
+
+        return {
+          id: p.id,
+          name: p.name,
+          squad_number: p.squad_number,
+          preferred_position: p.preferred_position,
+          seconds_played: 0,
+          current_position: p.preferred_position || 'SUB',
+          isInjured: false,
+          isActive: true,
+          total_matches: totalMatches,
+          total_seconds_played: totalSecs,
+          total_goals: totalGoals,
+          total_potm: totalPotm,
+        };
+      });
 
       setSquad(formatted);
       setAvailablePlayerIds(formatted.map((p) => p.id));
@@ -171,41 +220,6 @@ export default function MatchdayApp() {
     loadSquad();
   }, []);
 
-  const getRecommendation = () => {
-    const activeCount = availablePlayerIds.length;
-    const subsCount = activeCount - currentPitchCapacity;
-
-    if (subsCount <= 0) {
-      return { interval: 0, batch: 0, note: 'No subs needed (exact squad count).' };
-    }
-    if (subsCount === 1) {
-      return { interval: Math.floor((halfMinutes * 2) / activeCount), batch: 1, note: `Recommend 1 sub every ${Math.floor((halfMinutes * 2) / activeCount)} mins for smooth rotation.` };
-    }
-    if (subsCount === 2) {
-      return { interval: 6, batch: 1, note: 'Recommend 1 sub every 6 mins.' };
-    }
-    if (subsCount >= 3) {
-      return { interval: 7, batch: 2, note: 'Recommend 2 subs every 7 mins to keep tempo high.' };
-    }
-    return { interval: 7, batch: 1, note: 'Standard rotation preset.' };
-  };
-
-  const applyPreset = (presetKey: string) => {
-    setAgeGroup(presetKey);
-    const preset = AGE_PRESETS[presetKey];
-    if (preset) {
-      const capacity = presetKey === 'U7' ? carouselPitches * 3 : preset.pitchCount;
-      setBasePitchCapacity(capacity);
-      setHalfMinutes(preset.halfMins);
-      setSecondsRemaining(preset.halfMins * 60);
-      setIsClockRunning(false);
-
-      const activeSquad = squad.filter((p) => availablePlayerIds.includes(p.id) && !p.isInjured);
-      setPitchPlayers(activeSquad.slice(0, capacity));
-      setSubBench(activeSquad.slice(capacity));
-    }
-  };
-
   const handleHalfMinutesChange = (newMins: number) => {
     const mins = Math.max(1, newMins);
     setHalfMinutes(mins);
@@ -213,7 +227,6 @@ export default function MatchdayApp() {
     setIsClockRunning(false);
   };
 
-  // Helper to recalculate remaining future sub schedule dynamically
   const recalculateFutureSubSchedule = (
     currentPitch: Player[],
     currentBench: Player[],
@@ -228,7 +241,6 @@ export default function MatchdayApp() {
     let tempPitch = [...currentPitch];
     let tempBench = [...currentBench];
 
-    // Filter out Goalkeeper if fixed
     if (fixedGkId) {
       tempPitch = tempPitch.filter((p) => p.id !== fixedGkId);
       tempBench = tempBench.filter((p) => p.id !== fixedGkId);
@@ -265,7 +277,6 @@ export default function MatchdayApp() {
     setGeneratedPlan([...completed, ...newPendingPlan]);
   };
 
-  // Toggle Powerplay (+1 Pitch Slot) and recalculate sub schedule
   const togglePowerplay = () => {
     triggerHaptic();
     const newPowerplayState = !isPowerplayActive;
@@ -294,7 +305,6 @@ export default function MatchdayApp() {
     }
   };
 
-  // Mark Player as Injured & Auto-Recalculate Remaining Schedule
   const handleMarkInjured = (playerId: string) => {
     triggerHaptic();
     const targetPlayer = [...pitchPlayers, ...subBench].find((p) => p.id === playerId);
@@ -322,7 +332,6 @@ export default function MatchdayApp() {
     recalculateFutureSubSchedule(updatedPitch, updatedBench, currentPitchCapacity);
   };
 
-  // Recover Injured Player & Return to Rotation
   const handleRecoverPlayer = (playerId: string) => {
     triggerHaptic();
     const playerToRecover = injuredPlayers.find((p) => p.id === playerId);
@@ -430,169 +439,62 @@ export default function MatchdayApp() {
     ]);
   };
 
-  const handleRemoveGoal = (goalId: string) => {
+  // SAVE MATCH & STATS DIRECTLY TO SUPABASE
+  const handleSaveAndFinishMatch = async () => {
     triggerHaptic();
-    setGoals((prev) => prev.filter((g) => g.id !== goalId));
-  };
+    setSavingMatch(true);
 
-  const togglePlayerAvailability = (id: string) => {
-    triggerHaptic();
-    setAvailablePlayerIds((prev) =>
-      prev.includes(id) ? prev.filter((pId) => pId !== id) : [...prev, id]
-    );
-  };
+    try {
+      // 1. Insert Match Row
+      const { data: matchData, error: matchError } = await supabase
+        .from('matches')
+        .insert([
+          {
+            opponent_name: opponentName,
+            age_group: ageGroup,
+            our_score: ourGoalsCount,
+            opponent_score: opponentGoalsCount,
+            player_of_the_match: playerOfTheMatch,
+          },
+        ])
+        .select()
+        .single();
 
-  const getProjectedMinutes = () => {
-    const active = squad.filter((p) => availablePlayerIds.includes(p.id));
-    if (active.length === 0) return [];
-
-    const totalMatchMins = halfMinutes * 2;
-    const minutesMap: Record<string, number> = {};
-
-    active.forEach((p) => {
-      minutesMap[p.id] = 0;
-    });
-
-    if (gkMode === 'fixed' && fixedGkId && minutesMap[fixedGkId] !== undefined) {
-      minutesMap[fixedGkId] = totalMatchMins;
-      const outfield = active.filter((p) => p.id !== fixedGkId);
-      const outfieldCapacity = currentPitchCapacity - 1;
-      let currentPitch = outfield.slice(0, outfieldCapacity);
-      let currentBench = outfield.slice(outfieldCapacity);
-
-      for (let m = 1; m <= totalMatchMins; m++) {
-        currentPitch.forEach((p) => (minutesMap[p.id] += 1));
-        if (m % rotationIntervalMins === 0 && m < totalMatchMins) {
-          for (let i = 0; i < subsPerBatch; i++) {
-            if (currentBench.length === 0 || currentPitch.length === 0) break;
-            const inc = currentBench.shift();
-            const out = currentPitch.shift();
-            if (inc && out) {
-              currentPitch.push(inc);
-              currentBench.push(out);
-            }
-          }
-        }
+      if (matchError || !matchData) {
+        alert('Error saving match record.');
+        setSavingMatch(false);
+        return;
       }
-    } else if (gkMode === 'split' && fixedGkId && half2GkId) {
-      minutesMap[fixedGkId] += halfMinutes + Math.min(maxGkOutfieldMins, halfMinutes);
-      minutesMap[half2GkId] += halfMinutes + Math.min(maxGkOutfieldMins, halfMinutes);
 
-      const pureOutfield = active.filter((p) => p.id !== fixedGkId && p.id !== half2GkId);
-      const remainingPitchSeats = currentPitchCapacity - 1;
-      
-      if (pureOutfield.length > 0) {
-        const totalOutfieldCapacityMins = remainingPitchSeats * totalMatchMins;
-        const gkOutfieldConsumed = Math.min(maxGkOutfieldMins, halfMinutes) * 2;
-        const netPoolForPureOutfield = totalOutfieldCapacityMins - gkOutfieldConsumed;
-        const fairMinsPerPureOutfield = Math.round(netPoolForPureOutfield / pureOutfield.length);
+      // 2. Prepare Per-Player Match Stats
+      const allActiveMatchPlayers = [...pitchPlayers, ...subBench, ...injuredPlayers];
+      const statsPayload = allActiveMatchPlayers.map((p) => {
+        const playerGoalsCount = goals.filter((g) => !g.isOpponent && g.scorerName === p.name).length;
+        return {
+          match_id: matchData.id,
+          player_id: p.id,
+          seconds_played: p.seconds_played,
+          goals_scored: playerGoalsCount,
+          is_potm: playerOfTheMatch === p.name,
+        };
+      });
 
-        pureOutfield.forEach((p) => {
-          minutesMap[p.id] = fairMinsPerPureOutfield;
-        });
+      const { error: statsError } = await supabase.from('match_player_stats').insert(statsPayload);
+
+      if (statsError) {
+        console.error('Error saving player stats:', statsError);
+        alert('Match saved, but player stats failed to update.');
+      } else {
+        alert('Matchday results & player stats successfully saved to Supabase!');
+        loadSquad();
+        setActiveTab('stats');
       }
-    } else {
-      let currentPitch = active.slice(0, currentPitchCapacity);
-      let currentBench = active.slice(currentPitchCapacity);
-
-      for (let m = 1; m <= totalMatchMins; m++) {
-        currentPitch.forEach((p) => (minutesMap[p.id] += 1));
-        if (m % rotationIntervalMins === 0 && m < totalMatchMins) {
-          for (let i = 0; i < subsPerBatch; i++) {
-            if (currentBench.length === 0 || currentPitch.length === 0) break;
-            const inc = currentBench.shift();
-            const out = currentPitch.shift();
-            if (inc && out) {
-              currentPitch.push(inc);
-              currentBench.push(out);
-            }
-          }
-        }
-      }
+    } catch (err) {
+      console.error(err);
+      alert('An unexpected error occurred while saving.');
+    } finally {
+      setSavingMatch(false);
     }
-
-    return active.map((p) => ({
-      ...p,
-      projectedMins: minutesMap[p.id] || 0,
-    }));
-  };
-
-  const handleGenerateMatchPlan = () => {
-    triggerHaptic();
-    const active = squad.filter((p) => availablePlayerIds.includes(p.id));
-    if (active.length <= currentPitchCapacity) return;
-
-    let gkPlayer: Player | undefined;
-    let outfieldPlayers = [...active];
-
-    if (fixedGkId) {
-      gkPlayer = active.find((p) => p.id === fixedGkId);
-      if (gkPlayer) outfieldPlayers = active.filter((p) => p.id !== fixedGkId);
-    }
-
-    const outfieldCapacity = currentPitchCapacity - 1;
-    const startingOutfieldPitch = outfieldPlayers.slice(0, outfieldCapacity);
-    const startingBench = outfieldPlayers.slice(outfieldCapacity);
-
-    const fullStartingPitch = gkPlayer
-      ? [{ ...gkPlayer, current_position: 'Goalkeeper' }, ...startingOutfieldPitch]
-      : startingOutfieldPitch;
-
-    setPitchPlayers(fullStartingPitch);
-    setSubBench(startingBench);
-
-    const plan: SubPlanStep[] = [];
-    const totalMatchMins = halfMinutes * 2;
-
-    let currentOutfieldPitch = [...startingOutfieldPitch];
-    let currentBench = [...startingBench];
-    let interval = rotationIntervalMins;
-
-    while (interval < totalMatchMins) {
-      if (gkMode === 'split' && interval === halfMinutes && half2GkId) {
-        const h2Gk = active.find((p) => p.id === half2GkId);
-        const h1Gk = active.find((p) => p.id === fixedGkId);
-
-        if (h2Gk && h1Gk) {
-          plan.push({
-            id: Math.random().toString(),
-            minute: interval,
-            offPlayerId: h1Gk.id,
-            offPlayerName: `#${h1Gk.squad_number} ${h1Gk.name} (GK)`,
-            onPlayerId: h2Gk.id,
-            onPlayerName: `#${h2Gk.squad_number} ${h2Gk.name} (GK)`,
-            status: 'pending',
-          });
-        }
-      }
-
-      for (let i = 0; i < subsPerBatch; i++) {
-        if (currentBench.length === 0 || currentOutfieldPitch.length === 0) break;
-
-        const incoming = currentBench.shift();
-        const outgoing = currentOutfieldPitch.shift();
-
-        if (incoming && outgoing) {
-          plan.push({
-            id: Math.random().toString(),
-            minute: interval,
-            offPlayerId: outgoing.id,
-            offPlayerName: `#${outgoing.squad_number} ${outgoing.name}`,
-            onPlayerId: incoming.id,
-            onPlayerName: `#${incoming.squad_number} ${incoming.name}`,
-            status: 'pending',
-          });
-
-          currentOutfieldPitch.push(incoming);
-          currentBench.push(outgoing);
-        }
-      }
-
-      interval += rotationIntervalMins;
-    }
-
-    setGeneratedPlan(plan);
-    setActiveTab('matchday');
   };
 
   const generateWhatsAppSummary = () => {
@@ -644,16 +546,40 @@ export default function MatchdayApp() {
     }
   };
 
+  const startEditPlayer = (player: Player) => {
+    setEditingPlayerId(player.id);
+    setEditName(player.name);
+    setEditNumber(player.squad_number.toString());
+    setEditPosition(player.preferred_position);
+  };
+
+  const saveEditPlayer = async (id: string) => {
+    const { error } = await supabase
+      .from('players')
+      .update({
+        name: editName,
+        squad_number: parseInt(editNumber, 10),
+        preferred_position: editPosition,
+      })
+      .eq('id', id);
+
+    if (!error) {
+      setEditingPlayerId(null);
+      loadSquad();
+    }
+  };
+
   const handleDeletePlayer = async (id: string) => {
     const { error } = await supabase.from('players').delete().eq('id', id);
     if (!error) loadSquad();
   };
 
   if (loading) {
-    return <div className="bg-black text-white min-h-screen p-8 text-center font-bold">Loading Co-Gaffer...</div>;
+    return <div className="bg-black text-white min-h-screen p-8 text-center font-bold">Loading Co-Gaffer Dashboard...</div>;
   }
 
-  const rec = getRecommendation();
+  // Calculate Season Average Playing Time for Equal-Time Auditing
+  const squadMaxSeconds = Math.max(...squad.map((p) => p.total_seconds_played || 0), 1);
 
   return (
     <div className="bg-black text-white min-h-screen pb-20 p-4 font-sans select-none max-w-md mx-auto">
@@ -677,7 +603,7 @@ export default function MatchdayApp() {
       {/* TAB 1: MATCHDAY TOUCHLINE */}
       {activeTab === 'matchday' && (
         <div>
-          {/* Format Bar & Powerplay Banner */}
+          {/* Format Bar & Settings */}
           <div className="flex justify-between items-center bg-gray-950 px-3 py-2 rounded-lg mb-3 border border-gray-850">
             <span className="text-xs font-bold text-lime-400">
               {AGE_PRESETS[ageGroup]?.label || `${currentPitchCapacity}v${currentPitchCapacity}`}
@@ -889,7 +815,7 @@ export default function MatchdayApp() {
               })}
             </div>
 
-            {/* INJURED PLAYERS / RECOVERY DRAWER */}
+            {/* INJURED PLAYERS DRAWER */}
             {injuredPlayers.length > 0 && (
               <div className="mt-4 pt-3 border-t border-gray-800">
                 <h3 className="text-xs font-bold text-red-400 mb-2 uppercase tracking-wider flex justify-between items-center">
@@ -916,37 +842,44 @@ export default function MatchdayApp() {
             )}
           </div>
 
-          {/* WhatsApp Share Section */}
-          <div className="bg-gray-900 p-4 rounded-xl border border-gray-800">
-            <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold mb-3">
-              📲 WhatsApp Post-Match Recap
+          {/* WhatsApp & Save Match Section */}
+          <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 flex flex-col gap-3">
+            <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold">
+              💾 Finish Match & Sync to Supabase
             </h2>
-            <div className="flex flex-col gap-2 mb-3">
-              <input
-                type="text"
-                placeholder="Opponent Name"
-                value={opponentName}
-                onChange={(e) => setOpponentName(e.target.value)}
-                className="bg-black border border-gray-800 rounded p-2 text-xs text-white"
-              />
-              <select
-                value={playerOfTheMatch || ''}
-                onChange={(e) => setPlayerOfTheMatch(e.target.value || null)}
-                className="bg-black border border-gray-800 rounded p-2 text-xs text-white"
-              >
-                <option value="">Select Star Player of the Match</option>
-                {[...pitchPlayers, ...subBench].map((p) => (
-                  <option key={p.id} value={p.name}>#{p.squad_number} {p.name}</option>
-                ))}
-              </select>
-            </div>
-
-            <button
-              onClick={generateWhatsAppSummary}
-              className="w-full bg-emerald-500 text-black font-black p-3 rounded-xl text-xs active:scale-95 transition-all flex items-center justify-center gap-2"
+            <input
+              type="text"
+              placeholder="Opponent Name"
+              value={opponentName}
+              onChange={(e) => setOpponentName(e.target.value)}
+              className="bg-black border border-gray-800 rounded p-2.5 text-xs text-white"
+            />
+            <select
+              value={playerOfTheMatch || ''}
+              onChange={(e) => setPlayerOfTheMatch(e.target.value || null)}
+              className="bg-black border border-gray-800 rounded p-2.5 text-xs text-white"
             >
-              <span>💬</span> SHARE MATCH REPORT TO WHATSAPP
-            </button>
+              <option value="">Select Star Player of the Match</option>
+              {[...pitchPlayers, ...subBench, ...injuredPlayers].map((p) => (
+                <option key={p.id} value={p.name}>#{p.squad_number} {p.name}</option>
+              ))}
+            </select>
+
+            <div className="flex gap-2">
+              <button
+                onClick={generateWhatsAppSummary}
+                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-black p-3 rounded-xl text-xs active:scale-95 transition-all"
+              >
+                💬 WHATSAPP RECAP
+              </button>
+              <button
+                onClick={handleSaveAndFinishMatch}
+                disabled={savingMatch}
+                className="flex-1 bg-lime-500 hover:bg-lime-400 text-black font-black p-3 rounded-xl text-xs active:scale-95 transition-all disabled:opacity-50"
+              >
+                {savingMatch ? 'SAVING...' : '💾 SAVE TO DATABASE'}
+              </button>
+            </div>
           </div>
         </div>
       )}
@@ -976,249 +909,32 @@ export default function MatchdayApp() {
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-3 pt-2 border-t border-gray-800">
-              <span className="text-xs font-bold text-gray-400">Custom Half Duration:</span>
-              <div className="flex items-center gap-1">
-                <input
-                  type="number"
-                  value={halfMinutes}
-                  onChange={(e) => handleHalfMinutesChange(parseInt(e.target.value, 10) || 20)}
-                  className="bg-black border border-gray-800 rounded p-1.5 w-16 text-center text-xs font-bold text-lime-400 focus:outline-none focus:border-lime-400"
-                />
-                <span className="text-xs text-gray-400 font-bold">mins</span>
-              </div>
-            </div>
           </div>
-
-          {/* GOALKEEPER ROTATION STRATEGY CARD */}
-          <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
-            <label className="block text-xs font-bold text-lime-400 mb-2 uppercase tracking-wider">
-              🧤 Goalkeeper Strategy
-            </label>
-            <div className="flex gap-2 mb-3">
-              <button
-                onClick={() => setGkMode('fixed')}
-                className={`flex-1 py-2 rounded text-xs font-bold border ${
-                  gkMode === 'fixed' ? 'bg-lime-500 text-black border-lime-400' : 'bg-black border-gray-800 text-gray-400'
-                }`}
-              >
-                Fixed GK (Full Match)
-              </button>
-              <button
-                onClick={() => setGkMode('split')}
-                className={`flex-1 py-2 rounded text-xs font-bold border ${
-                  gkMode === 'split' ? 'bg-lime-500 text-black border-lime-400' : 'bg-black border-gray-800 text-gray-400'
-                }`}
-              >
-                Split Halves / Dual GK
-              </button>
-            </div>
-
-            {gkMode === 'fixed' ? (
-              <select
-                value={fixedGkId || ''}
-                onChange={(e) => setFixedGkId(e.target.value || null)}
-                className="w-full bg-black border border-gray-800 rounded-lg p-2.5 text-white text-xs font-bold"
-              >
-                <option value="">No Fixed GK (Rotate everyone)</option>
-                {squad
-                  .filter((p) => availablePlayerIds.includes(p.id))
-                  .map((p) => (
-                    <option key={p.id} value={p.id}>
-                      #{p.squad_number} {p.name} ({p.preferred_position})
-                    </option>
-                  ))}
-              </select>
-            ) : (
-              <div>
-                <div className="grid grid-cols-2 gap-2 mb-3">
-                  <div>
-                    <label className="block text-[10px] text-gray-400 mb-1">Half 1 Goalkeeper</label>
-                    <select
-                      value={fixedGkId || ''}
-                      onChange={(e) => setFixedGkId(e.target.value || null)}
-                      className="w-full bg-black border border-gray-800 rounded p-2 text-white text-xs font-bold"
-                    >
-                      <option value="">Select H1 GK</option>
-                      {squad
-                        .filter((p) => availablePlayerIds.includes(p.id))
-                        .map((p) => (
-                          <option key={p.id} value={p.id}>#{p.squad_number} {p.name}</option>
-                        ))}
-                    </select>
-                  </div>
-                  <div>
-                    <label className="block text-[10px] text-gray-400 mb-1">Half 2 Goalkeeper</label>
-                    <select
-                      value={half2GkId || ''}
-                      onChange={(e) => setHalf2GkId(e.target.value || null)}
-                      className="w-full bg-black border border-gray-800 rounded p-2 text-white text-xs font-bold"
-                    >
-                      <option value="">Select H2 GK</option>
-                      {squad
-                        .filter((p) => availablePlayerIds.includes(p.id))
-                        .map((p) => (
-                          <option key={p.id} value={p.id}>#{p.squad_number} {p.name}</option>
-                        ))}
-                    </select>
-                  </div>
-                </div>
-
-                <div className="p-2.5 bg-black rounded-lg border border-gray-800">
-                  <div className="flex justify-between items-center text-xs">
-                    <span className="font-bold text-gray-300">Max Outfield Mins for GKs:</span>
-                    <select
-                      value={maxGkOutfieldMins}
-                      onChange={(e) => setMaxGkOutfieldMins(parseInt(e.target.value, 10))}
-                      className="bg-gray-900 border border-gray-700 rounded p-1 text-lime-400 font-bold"
-                    >
-                      <option value={5}>5 mins max</option>
-                      <option value={8}>8 mins max</option>
-                      <option value={10}>10 mins max (Recommended)</option>
-                      <option value={12}>12 mins max</option>
-                      <option value={15}>15 mins max</option>
-                    </select>
-                  </div>
-                </div>
-              </div>
-            )}
-          </div>
-
-          {/* SQUAD AVAILABILITY SELECTION CARD */}
-          <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
-            <h2 className="text-xs uppercase tracking-widest text-gray-300 font-bold mb-3 flex justify-between">
-              <span>Select Available Players ({availablePlayerIds.length}/{squad.length})</span>
-            </h2>
-            <div className="grid grid-cols-2 gap-2">
-              {squad.map((player) => {
-                const isChecked = availablePlayerIds.includes(player.id);
-                const isGk = player.id === fixedGkId || player.id === half2GkId;
-
-                return (
-                  <button
-                    key={player.id}
-                    onClick={() => togglePlayerAvailability(player.id)}
-                    className={`p-2.5 rounded-lg text-left border font-bold text-xs flex justify-between items-center ${
-                      isGk
-                        ? 'bg-lime-500/20 border-lime-500 text-lime-400'
-                        : isChecked
-                        ? 'bg-lime-500/10 border-lime-500/50 text-lime-300'
-                        : 'bg-black border-gray-800 text-gray-500'
-                    }`}
-                  >
-                    <span>#{player.squad_number} {player.name} {isGk ? '🧤' : ''}</span>
-                    <span>{isChecked ? '✓' : '+'}</span>
-                  </button>
-                );
-              })}
-            </div>
-          </div>
-
-          {/* CO-GAFFER RECOMMENDATION BANNER */}
-          {availablePlayerIds.length > currentPitchCapacity && (
-            <div className="bg-lime-500/10 border border-lime-500/40 p-3 rounded-xl mb-4 text-xs">
-              <div className="flex items-center gap-2 mb-1">
-                <span className="text-lime-400 font-black">💡 CO-GAFFER RECOMMENDATION</span>
-              </div>
-              <p className="text-gray-300 text-[11px] font-medium">{rec.note}</p>
-              <button
-                onClick={() => {
-                  setRotationIntervalMins(rec.interval);
-                  setSubsPerBatch(rec.batch);
-                }}
-                className="mt-2 bg-lime-500 text-black font-extrabold px-3 py-1 rounded text-[10px] hover:bg-lime-400"
-              >
-                APPLY RECOMMENDATION ({rec.interval}m / {rec.batch} subs)
-              </button>
-            </div>
-          )}
-
-          {/* SUB FREQUENCY & BATCH SIZE CARD */}
-          <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="block text-[11px] font-bold text-gray-300 mb-1.5 uppercase tracking-wider">
-                  Rotation Frequency
-                </label>
-                <select
-                  value={rotationIntervalMins}
-                  onChange={(e) => setRotationIntervalMins(parseInt(e.target.value, 10))}
-                  className="w-full bg-black border border-gray-800 rounded-lg p-2.5 text-white text-xs font-bold focus:outline-none focus:border-lime-400"
-                >
-                  <option value={5}>Every 5 mins</option>
-                  <option value={6}>Every 6 mins</option>
-                  <option value={7}>Every 7 mins</option>
-                  <option value={8}>Every 8 mins</option>
-                  <option value={10}>Every 10 mins</option>
-                </select>
-              </div>
-
-              <div>
-                <label className="block text-[11px] font-bold text-gray-300 mb-1.5 uppercase tracking-wider">
-                  Subs per Batch
-                </label>
-                <select
-                  value={subsPerBatch}
-                  onChange={(e) => setSubsPerBatch(parseInt(e.target.value, 10))}
-                  className="w-full bg-black border border-gray-800 rounded-lg p-2.5 text-white text-xs font-bold focus:outline-none focus:border-lime-400"
-                >
-                  <option value={1}>1 Player at a time</option>
-                  <option value={2}>2 Players at once</option>
-                  <option value={3}>3 Players at once</option>
-                </select>
-              </div>
-            </div>
-          </div>
-
-          {/* PROJECTED MINUTES SUMMARY CARD */}
-          {availablePlayerIds.length > 0 && (
-            <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
-              <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold mb-3 flex justify-between">
-                <span>📊 Projected Playing Time Breakdown</span>
-                <span>{halfMinutes * 2}m Total Match</span>
-              </h2>
-              <div className="grid grid-cols-2 gap-2">
-                {getProjectedMinutes().map((player) => (
-                  <div
-                    key={player.id}
-                    className="p-2.5 bg-black rounded-lg border border-gray-800 flex justify-between items-center text-xs"
-                  >
-                    <span className="font-bold text-gray-300">
-                      #{player.squad_number} {player.name}
-                      {player.id === fixedGkId || player.id === half2GkId ? ' 🧤' : ''}
-                    </span>
-                    <span className="font-mono font-extrabold text-lime-400">
-                      {player.projectedMins}m
-                    </span>
-                  </div>
-                ))}
-              </div>
-            </div>
-          )}
 
           <button
-            onClick={handleGenerateMatchPlan}
+            onClick={() => setActiveTab('matchday')}
             className="w-full bg-lime-500 text-black font-black p-4 rounded-xl text-sm active:scale-95 transition-all shadow-lg"
           >
-            ⚡ GENERATE LINEUP & SUB SCHEDULE
+            ⚽ GO TO LIVE MATCHDAY TOUCHLINE
           </button>
         </div>
       )}
 
-      {/* TAB 3: SQUAD MANAGEMENT */}
+      {/* TAB 3: ENHANCED EDITABLE SQUAD MANAGEMENT */}
       {activeTab === 'squad' && (
         <div>
-          <h1 className="text-xl font-black text-lime-400 mb-4">Squad Management</h1>
+          <h1 className="text-xl font-black text-lime-400 mb-4">Squad Roster Manager</h1>
 
+          {/* Add New Player Form */}
           <form onSubmit={handleAddPlayer} className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-6">
-            <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-3 font-bold">Add New Player</h2>
+            <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-3 font-bold">Add New Squad Player</h2>
             <div className="flex flex-col gap-3">
               <input
                 type="text"
                 placeholder="Player Name"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                className="bg-black border border-gray-800 rounded-lg p-3 text-white focus:outline-none focus:border-lime-400"
+                className="bg-black border border-gray-800 rounded-lg p-3 text-white focus:outline-none focus:border-lime-400 text-xs font-bold"
               />
               <div className="flex gap-2">
                 <input
@@ -1226,12 +942,12 @@ export default function MatchdayApp() {
                   placeholder="Kit #"
                   value={newNumber}
                   onChange={(e) => setNewNumber(e.target.value)}
-                  className="bg-black border border-gray-800 rounded-lg p-3 text-white w-1/3 focus:outline-none focus:border-lime-400"
+                  className="bg-black border border-gray-800 rounded-lg p-3 text-white w-1/3 focus:outline-none focus:border-lime-400 text-xs font-bold"
                 />
                 <select
                   value={newPosition}
                   onChange={(e) => setNewPosition(e.target.value)}
-                  className="bg-black border border-gray-800 rounded-lg p-3 text-white w-2/3 focus:outline-none focus:border-lime-400"
+                  className="bg-black border border-gray-800 rounded-lg p-3 text-white w-2/3 focus:outline-none focus:border-lime-400 text-xs font-bold"
                 >
                   <option value="Goalkeeper">Goalkeeper</option>
                   <option value="Defender">Defender</option>
@@ -1241,28 +957,179 @@ export default function MatchdayApp() {
               </div>
               <button
                 type="submit"
-                className="bg-lime-500 text-black font-black p-3 rounded-lg active:scale-95 transition-all mt-1"
+                className="bg-lime-500 text-black font-black p-3 rounded-lg active:scale-95 transition-all text-xs"
               >
-                ADD TO SQUAD
+                + ADD TO ROSTER
               </button>
             </div>
           </form>
 
+          {/* Editable Squad Roster List */}
           <div className="bg-gray-900 p-4 rounded-xl border border-gray-800">
-            <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-3 font-bold">Current Roster ({squad.length})</h2>
-            <div className="flex flex-col gap-2">
-              {squad.map((player) => (
-                <div key={player.id} className="p-3 bg-black rounded-lg border border-gray-800 flex justify-between items-center">
-                  <div>
-                    <span className="font-extrabold text-base mr-2">#{player.squad_number} {player.name}</span>
-                    <span className="text-xs text-gray-400 bg-gray-900 px-2 py-0.5 rounded">{player.preferred_position}</span>
+            <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-3 font-bold flex justify-between">
+              <span>Active Roster ({squad.length})</span>
+              <span className="text-lime-400">Tap to edit details</span>
+            </h2>
+
+            <div className="flex flex-col gap-2.5">
+              {squad.map((player) => {
+                const isEditing = editingPlayerId === player.id;
+
+                return (
+                  <div key={player.id} className="p-3 bg-black rounded-xl border border-gray-800">
+                    {isEditing ? (
+                      <div className="flex flex-col gap-2">
+                        <input
+                          type="text"
+                          value={editName}
+                          onChange={(e) => setEditName(e.target.value)}
+                          className="bg-gray-900 border border-gray-700 rounded p-2 text-xs font-bold text-white"
+                        />
+                        <div className="flex gap-2">
+                          <input
+                            type="number"
+                            value={editNumber}
+                            onChange={(e) => setEditNumber(e.target.value)}
+                            className="bg-gray-900 border border-gray-700 rounded p-2 text-xs font-bold text-white w-1/3"
+                          />
+                          <select
+                            value={editPosition}
+                            onChange={(e) => setEditPosition(e.target.value)}
+                            className="bg-gray-900 border border-gray-700 rounded p-2 text-xs font-bold text-white w-2/3"
+                          >
+                            <option value="Goalkeeper">Goalkeeper</option>
+                            <option value="Defender">Defender</option>
+                            <option value="Midfielder">Midfielder</option>
+                            <option value="Striker">Striker</option>
+                          </select>
+                        </div>
+                        <div className="flex gap-2 mt-1">
+                          <button
+                            onClick={() => saveEditPlayer(player.id)}
+                            className="flex-1 bg-lime-500 text-black font-extrabold py-1.5 rounded text-xs"
+                          >
+                            SAVE
+                          </button>
+                          <button
+                            onClick={() => setEditingPlayerId(null)}
+                            className="bg-gray-800 text-gray-300 font-bold px-3 py-1.5 rounded text-xs"
+                          >
+                            CANCEL
+                          </button>
+                        </div>
+                      </div>
+                    ) : (
+                      <div>
+                        <div className="flex justify-between items-center mb-2">
+                          <div>
+                            <span className="font-extrabold text-base mr-2">#{player.squad_number} {player.name}</span>
+                            <span className="text-[10px] text-lime-400 bg-lime-500/10 border border-lime-500/30 px-2 py-0.5 rounded font-bold">
+                              {player.preferred_position}
+                            </span>
+                          </div>
+                          <div className="flex items-center gap-1">
+                            <button
+                              onClick={() => startEditPlayer(player)}
+                              className="text-gray-400 hover:text-white font-bold text-xs px-2 py-1 bg-gray-900 rounded border border-gray-800"
+                            >
+                              ✏️ EDIT
+                            </button>
+                            <button
+                              onClick={() => handleDeletePlayer(player.id)}
+                              className="text-red-500 hover:text-red-400 font-bold text-xs px-2 py-1 bg-red-950/40 rounded border border-red-900/40"
+                            >
+                              🗑️
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Season Badge Highlights */}
+                        <div className="grid grid-cols-4 gap-1 text-[10px] bg-gray-950 p-2 rounded-lg text-center font-mono text-gray-400 border border-gray-850">
+                          <div>
+                            <span className="block text-gray-500 text-[9px]">MATCHES</span>
+                            <span className="font-bold text-white">{player.total_matches}</span>
+                          </div>
+                          <div>
+                            <span className="block text-gray-500 text-[9px]">MINS</span>
+                            <span className="font-bold text-lime-400">{Math.floor((player.total_seconds_played || 0) / 60)}m</span>
+                          </div>
+                          <div>
+                            <span className="block text-gray-500 text-[9px]">GOALS</span>
+                            <span className="font-bold text-amber-400">{player.total_goals}</span>
+                          </div>
+                          <div>
+                            <span className="block text-gray-500 text-[9px]">POTM</span>
+                            <span className="font-bold text-purple-400">{player.total_potm} ⭐</span>
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
-                  <button
-                    onClick={() => handleDeletePlayer(player.id)}
-                    className="text-red-500 hover:text-red-400 font-bold text-xs p-2"
-                  >
-                    REMOVE
-                  </button>
+                );
+              })}
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* TAB 4: SEASON EQUAL-TIME AUDIT & STATS DASHBOARD */}
+      {activeTab === 'stats' && (
+        <div>
+          <h1 className="text-xl font-black text-lime-400 mb-4">Season Equal-Time Audit</h1>
+
+          {/* Equal-Time Audit Heatmap Card */}
+          <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-6">
+            <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold mb-3 flex justify-between items-center">
+              <span>⏱️ Squad Playing Time Audit</span>
+              <span className="text-[10px] text-gray-400">FA 100% Equal Rotation</span>
+            </h2>
+
+            <div className="flex flex-col gap-3">
+              {squad.map((player) => {
+                const mins = Math.floor((player.total_seconds_played || 0) / 60);
+                const percentOfMax = Math.round(((player.total_seconds_played || 0) / squadMaxSeconds) * 100);
+
+                return (
+                  <div key={player.id} className="bg-black p-3 rounded-lg border border-gray-800">
+                    <div className="flex justify-between items-center text-xs mb-1 font-bold">
+                      <span className="text-gray-200">#{player.squad_number} {player.name}</span>
+                      <span className="font-mono text-lime-400">{mins} mins ({player.total_matches} matches)</span>
+                    </div>
+                    {/* Visual Progress Bar */}
+                    <div className="w-full bg-gray-900 h-2 rounded-full overflow-hidden border border-gray-800">
+                      <div
+                        className={`h-full transition-all ${
+                          percentOfMax >= 85 ? 'bg-lime-500' : percentOfMax >= 60 ? 'bg-amber-400' : 'bg-red-500'
+                        }`}
+                        style={{ width: `${Math.max(percentOfMax, 5)}%` }}
+                      />
+                    </div>
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          {/* Archived Match History */}
+          <div className="bg-gray-900 p-4 rounded-xl border border-gray-800">
+            <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-3 font-bold">
+              📜 Saved Match History ({matchHistory.length})
+            </h2>
+            <div className="flex flex-col gap-2">
+              {matchHistory.map((m) => (
+                <div key={m.id} className="p-3 bg-black rounded-lg border border-gray-800 flex justify-between items-center text-xs">
+                  <div>
+                    <span className="font-bold text-white block">Vs. {m.opponent_name} ({m.age_group})</span>
+                    <span className="text-[10px] text-gray-400 font-mono">{m.match_date}</span>
+                  </div>
+                  <div className="text-right">
+                    <span className="font-mono font-black text-sm text-lime-400 block">
+                      {m.our_score} - {m.opponent_score}
+                    </span>
+                    {m.player_of_the_match && (
+                      <span className="text-[10px] text-purple-300 font-bold">⭐ {m.player_of_the_match}</span>
+                    )}
+                  </div>
                 </div>
               ))}
             </div>
@@ -1278,7 +1145,7 @@ export default function MatchdayApp() {
             activeTab === 'matchday' ? 'bg-lime-500 text-black' : 'text-gray-400'
           }`}
         >
-          ⚽ MATCHDAY
+          ⚽ MATCH
         </button>
         <button
           onClick={() => setActiveTab('planner')}
@@ -1286,7 +1153,7 @@ export default function MatchdayApp() {
             activeTab === 'planner' ? 'bg-lime-500 text-black' : 'text-gray-400'
           }`}
         >
-          📅 SCHEDULER
+          📅 PLANNER
         </button>
         <button
           onClick={() => setActiveTab('squad')}
@@ -1295,6 +1162,14 @@ export default function MatchdayApp() {
           }`}
         >
           📋 SQUAD
+        </button>
+        <button
+          onClick={() => setActiveTab('stats')}
+          className={`flex-1 py-3 font-black text-xs rounded-lg transition-all ${
+            activeTab === 'stats' ? 'bg-lime-500 text-black' : 'text-gray-400'
+          }`}
+        >
+          📊 AUDIT
         </button>
       </div>
     </div>

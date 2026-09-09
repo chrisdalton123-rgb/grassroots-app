@@ -41,7 +41,17 @@ export default function MatchdayApp() {
     return `${mins} mins`;
   };
 
-  // Load Squad from Supabase
+  // Find lowest seconds among all players for equality tracking
+  const allPlayers = [...pitchPlayers, ...subBench];
+  const lowestSeconds = allPlayers.length > 0 
+    ? Math.min(...allPlayers.map((p) => p.seconds_played)) 
+    : 0;
+
+  // Find highest seconds among pitch players to highlight who needs a sub
+  const highestPitchSeconds = pitchPlayers.length > 0 
+    ? Math.max(...pitchPlayers.map((p) => p.seconds_played)) 
+    : 0;
+
   const loadSquad = async () => {
     setLoading(true);
     const { data, error } = await supabase
@@ -72,7 +82,6 @@ export default function MatchdayApp() {
     loadSquad();
   }, []);
 
-  // Live Timer
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
     if (isClockRunning && secondsRemaining > 0) {
@@ -93,7 +102,6 @@ export default function MatchdayApp() {
     };
   }, [isClockRunning, secondsRemaining]);
 
-  // Handlers
   const handleSubSwap = (benchPlayerId: string) => {
     if (!selectedOnPitch) return;
     const onPitchIndex = pitchPlayers.findIndex((p) => p.id === selectedOnPitch);
@@ -174,19 +182,24 @@ export default function MatchdayApp() {
 
           {/* Pitch Section */}
           <div className="mb-6">
-            <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-2 font-bold">
-              On Pitch (Tap player to substitute)
+            <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-2 font-bold flex justify-between">
+              <span>On Pitch (Tap to sub)</span>
+              <span className="text-amber-400">🔥 High Mins Alert</span>
             </h2>
             <div className="grid grid-cols-2 gap-3">
               {pitchPlayers.map((player) => {
                 const isSelected = selectedOnPitch === player.id;
+                const isHighTime = player.seconds_played > 0 && player.seconds_played === highestPitchSeconds;
+
                 return (
                   <button
                     key={player.id}
                     onClick={() => setSelectedOnPitch(isSelected ? null : player.id)}
-                    className={`p-3.5 rounded-xl border-2 text-left transition-all ${
+                    className={`p-3.5 rounded-xl border-2 text-left transition-all relative ${
                       isSelected
                         ? 'bg-yellow-500 border-yellow-300 text-black scale-102 shadow-lg'
+                        : isHighTime
+                        ? 'bg-gray-900 border-amber-500/60 text-white'
                         : 'bg-gray-900 border-gray-800 text-white'
                     }`}
                   >
@@ -198,8 +211,14 @@ export default function MatchdayApp() {
                         {player.current_position}
                       </span>
                     </div>
-                    <div className="text-xs font-mono opacity-80">
-                      {formatPlayerMins(player.seconds_played)} played
+
+                    <div className="flex justify-between items-center text-xs font-mono opacity-90 mt-2">
+                      <span>{formatPlayerMins(player.seconds_played)} played</span>
+                      {isHighTime && !isSelected && (
+                        <span className="bg-amber-500/20 text-amber-300 border border-amber-500/40 text-[10px] px-1.5 py-0.5 rounded font-bold">
+                          REST NEXT
+                        </span>
+                      )}
                     </div>
                   </button>
                 );
@@ -209,28 +228,44 @@ export default function MatchdayApp() {
 
           {/* Bench Section */}
           <div className="bg-gray-900 p-4 rounded-xl border border-gray-800">
-            <h2 className="text-xs uppercase tracking-widest text-amber-400 mb-2 font-bold">
-              Substitutes Bench {selectedOnPitch ? '— Tap to sub on' : ''}
+            <h2 className="text-xs uppercase tracking-widest text-amber-400 mb-2 font-bold flex justify-between">
+              <span>Substitutes Bench</span>
+              <span className="text-lime-400">⭐ Priority Sub</span>
             </h2>
             <div className="flex flex-col gap-2">
-              {subBench.map((player) => (
-                <button
-                  key={player.id}
-                  disabled={!selectedOnPitch}
-                  onClick={() => handleSubSwap(player.id)}
-                  className={`p-3.5 rounded-xl flex justify-between items-center text-left border transition-all ${
-                    selectedOnPitch
-                      ? 'bg-amber-500/10 border-amber-500 text-amber-200 active:bg-amber-500 active:text-black'
-                      : 'bg-gray-950 border-gray-800 text-gray-500'
-                  }`}
-                >
-                  <div>
-                    <span className="font-extrabold text-base">#{player.squad_number} {player.name}</span>
-                    <span className="ml-3 text-xs font-mono">{formatPlayerMins(player.seconds_played)}</span>
-                  </div>
-                  {selectedOnPitch && <span className="font-black text-xs">SUB ON →</span>}
-                </button>
-              ))}
+              {subBench.map((player) => {
+                const isLowest = player.seconds_played === lowestSeconds;
+
+                return (
+                  <button
+                    key={player.id}
+                    disabled={!selectedOnPitch}
+                    onClick={() => handleSubSwap(player.id)}
+                    className={`p-3.5 rounded-xl flex justify-between items-center text-left border transition-all ${
+                      selectedOnPitch
+                        ? 'bg-amber-500/10 border-amber-500 text-amber-200 active:bg-amber-500 active:text-black'
+                        : isLowest
+                        ? 'bg-gray-950 border-lime-500/50 text-gray-300'
+                        : 'bg-gray-950 border-gray-800 text-gray-500'
+                    }`}
+                  >
+                    <div className="flex items-center gap-2">
+                      <div>
+                        <span className="font-extrabold text-base">#{player.squad_number} {player.name}</span>
+                        <span className="ml-3 text-xs font-mono">{formatPlayerMins(player.seconds_played)}</span>
+                      </div>
+                    </div>
+
+                    {selectedOnPitch ? (
+                      <span className="font-black text-xs">SUB ON →</span>
+                    ) : isLowest ? (
+                      <span className="bg-lime-500/20 text-lime-400 border border-lime-500/40 text-[10px] px-2 py-0.5 rounded font-bold">
+                        LOWEST MINS
+                      </span>
+                    ) : null}
+                  </button>
+                );
+              })}
             </div>
           </div>
         </div>
@@ -241,7 +276,6 @@ export default function MatchdayApp() {
         <div>
           <h1 className="text-xl font-black text-lime-400 mb-4">Squad Management</h1>
 
-          {/* Add Player Form */}
           <form onSubmit={handleAddPlayer} className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-6">
             <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-3 font-bold">Add New Player</h2>
             <div className="flex flex-col gap-3">
@@ -280,7 +314,6 @@ export default function MatchdayApp() {
             </div>
           </form>
 
-          {/* Active Roster List */}
           <div className="bg-gray-900 p-4 rounded-xl border border-gray-800">
             <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-3 font-bold">Current Roster ({squad.length})</h2>
             <div className="flex flex-col gap-2">

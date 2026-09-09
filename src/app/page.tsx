@@ -169,43 +169,47 @@ export default function MatchdayApp() {
     );
   };
 
-  // Generate Match Setup & Substitution Timetable
+  // Dynamic Dynamic Rotation Schedule Engine
   const handleGenerateMatchPlan = () => {
     const active = squad.filter((p) => availablePlayerIds.includes(p.id));
-    if (active.length < pitchCapacity) return;
+    if (active.length <= pitchCapacity) return;
 
-    // Lineup: Sort available players with goalkeeper first
+    // Lineup: Pitch gets first N available players, rest to bench
     const startingPitch = active.slice(0, pitchCapacity);
     const startingBench = active.slice(pitchCapacity);
 
     setPitchPlayers(startingPitch);
     setSubBench(startingBench);
 
-    // Build Substitution Schedule
     const plan: SubPlanStep[] = [];
     const totalMatchMins = halfMinutes * 2;
-    let currentBenchQueue = [...startingBench];
-    let currentPitchQueue = [...startingPitch];
 
-    if (currentBenchQueue.length > 0) {
-      let interval = rotationIntervalMins;
-      let stepIndex = 0;
+    // Maintain simulated live state arrays
+    let currentPitch = [...startingPitch];
+    let currentBench = [...startingBench];
 
-      while (interval < totalMatchMins) {
-        const offPlayer = currentPitchQueue[stepIndex % currentPitchQueue.length];
-        const onPlayer = currentBenchQueue[stepIndex % currentBenchQueue.length];
+    let interval = rotationIntervalMins;
 
-        if (offPlayer && onPlayer) {
-          plan.push({
-            minute: interval,
-            offPlayer: `#${offPlayer.squad_number} ${offPlayer.name}`,
-            onPlayer: `#${onPlayer.squad_number} ${onPlayer.name}`,
-          });
-        }
+    while (interval < totalMatchMins) {
+      // Pick the bench player who has been waiting longest on the bench (head of bench FIFO)
+      const incoming = currentBench.shift();
 
-        stepIndex++;
-        interval += rotationIntervalMins;
+      // Pick the pitch player who has been on pitch longest (head of pitch FIFO)
+      const outgoing = currentPitch.shift();
+
+      if (incoming && outgoing) {
+        plan.push({
+          minute: interval,
+          offPlayer: `#${outgoing.squad_number} ${outgoing.name}`,
+          onPlayer: `#${incoming.squad_number} ${incoming.name}`,
+        });
+
+        // Swap state: incoming player goes to tail of pitch, outgoing goes to tail of bench
+        currentPitch.push(incoming);
+        currentBench.push(outgoing);
       }
+
+      interval += rotationIntervalMins;
     }
 
     setGeneratedPlan(plan);
@@ -319,7 +323,7 @@ export default function MatchdayApp() {
             </button>
           </div>
 
-          {/* Generated Rotation Schedule Widget */}
+          {/* Pre-Planned Sub Schedule Widget */}
           {generatedPlan.length > 0 && (
             <div className="bg-gray-900 p-3.5 rounded-xl border border-lime-500/40 mb-4">
               <h3 className="text-xs font-black text-lime-400 mb-2 uppercase tracking-wider">
@@ -327,7 +331,7 @@ export default function MatchdayApp() {
               </h3>
               <div className="flex gap-2 overflow-x-auto pb-1 text-xs">
                 {generatedPlan.map((step, idx) => (
-                  <div key={idx} className="bg-black border border-gray-800 p-2 rounded shrink-0 min-w-[120px]">
+                  <div key={idx} className="bg-black border border-gray-800 p-2 rounded shrink-0 min-w-[130px]">
                     <span className="text-[10px] font-mono text-lime-400 block">MIN {step.minute}'</span>
                     <span className="text-red-400 block font-bold text-[11px]">OFF: {step.offPlayer}</span>
                     <span className="text-lime-400 block font-bold text-[11px]">ON: {step.onPlayer}</span>
@@ -337,7 +341,7 @@ export default function MatchdayApp() {
             </div>
           )}
 
-          {/* Standard Pitch Display */}
+          {/* Pitch Display */}
           <div className="mb-6">
             <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-2 font-bold flex justify-between">
               <span>On Pitch ({pitchPlayers.length}/{pitchCapacity})</span>
@@ -383,7 +387,7 @@ export default function MatchdayApp() {
             </div>
           </div>
 
-          {/* Substitutes Bench */}
+          {/* Bench Section */}
           <div className="bg-gray-900 p-4 rounded-xl border border-gray-800">
             <h2 className="text-xs uppercase tracking-widest text-amber-400 mb-2 font-bold flex justify-between">
               <span>Substitutes Bench ({subBench.length})</span>
@@ -436,7 +440,6 @@ export default function MatchdayApp() {
             Select today's available squad members to generate line-ups and pre-planned sub intervals.
           </p>
 
-          {/* Availability Selection */}
           <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
             <h2 className="text-xs uppercase tracking-widest text-gray-300 font-bold mb-3 flex justify-between">
               <span>Select Available Players ({availablePlayerIds.length}/{squad.length})</span>
@@ -462,7 +465,6 @@ export default function MatchdayApp() {
             </div>
           </div>
 
-          {/* Sub Interval Setting */}
           <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
             <label className="block text-xs font-bold text-gray-300 mb-2 uppercase tracking-wider">
               Substitution Rotation Frequency

@@ -48,7 +48,7 @@ type SavedMatch = {
 };
 
 const AGE_PRESETS: Record<string, { pitchCount: number; halfMins: number; label: string }> = {
-  'U7': { pitchCount: 3, halfMins: 10, label: 'U7 (3v3 Carousel Festival — Multi-Pitch)' },
+  'U7': { pitchCount: 3, halfMins: 10, label: 'U7 (3v3 Carousel Festival)' },
   'U8-U9': { pitchCount: 5, halfMins: 20, label: 'U8/U9 (5v5 — 20m Halves)' },
   'U10-U11': { pitchCount: 7, halfMins: 25, label: 'U10/U11 (7v7 — 25m Halves)' },
   'U12-U13': { pitchCount: 9, halfMins: 30, label: 'U12/U13 (9v9 — 30m Halves)' },
@@ -61,14 +61,22 @@ const FORMATION_OPTIONS: Record<number, { label: string; roles: string[] }[]> = 
     { label: '2-1-1 (Solid Base)', roles: ['GK', 'DEF', 'DEF', 'MID', 'STR'] },
     { label: '1-2-1 (Diamond)', roles: ['GK', 'DEF', 'MID', 'MID', 'STR'] },
   ],
+  6: [
+    { label: '2-2-1 (Balanced 6s)', roles: ['GK', 'DEF', 'DEF', 'MID', 'MID', 'STR'] },
+    { label: '1-3-1 (Midfield Overload)', roles: ['GK', 'DEF', 'MID', 'MID', 'MID', 'STR'] },
+  ],
   7: [
-    { label: '2-3-1 (Balanced)', roles: ['GK', 'DEF', 'DEF', 'MID', 'MID', 'MID', 'STR'] },
+    { label: '2-3-1 (Standard 7v7)', roles: ['GK', 'DEF', 'DEF', 'MID', 'MID', 'MID', 'STR'] },
     { label: '3-2-1 (Tree)', roles: ['GK', 'DEF', 'DEF', 'DEF', 'MID', 'MID', 'STR'] },
   ],
   9: [
-    { label: '3-3-2 (Standard)', roles: ['GK', 'DEF', 'DEF', 'DEF', 'MID', 'MID', 'MID', 'STR', 'STR'] },
+    { label: '3-3-2 (Standard 9v9)', roles: ['GK', 'DEF', 'DEF', 'DEF', 'MID', 'MID', 'MID', 'STR', 'STR'] },
     { label: '3-4-1 (Midfield Heavy)', roles: ['GK', 'DEF', 'DEF', 'DEF', 'MID', 'MID', 'MID', 'MID', 'STR'] },
   ],
+  11: [
+    { label: '4-3-3 (Attacking)', roles: ['GK', 'DEF', 'DEF', 'DEF', 'DEF', 'MID', 'MID', 'MID', 'STR', 'STR', 'STR'] },
+    { label: '4-4-2 (Classic)', roles: ['GK', 'DEF', 'DEF', 'DEF', 'DEF', 'MID', 'MID', 'MID', 'MID', 'STR', 'STR'] },
+  ]
 };
 
 export default function MatchdayApp() {
@@ -235,6 +243,23 @@ export default function MatchdayApp() {
   useEffect(() => {
     loadSquad();
   }, []);
+
+  const applyAgePreset = (presetKey: string) => {
+    setAgeGroup(presetKey);
+    setFormationIndex(0);
+    const preset = AGE_PRESETS[presetKey];
+    if (preset) {
+      const capacity = presetKey === 'U7' ? carouselPitches * 3 : preset.pitchCount;
+      setBasePitchCapacity(capacity);
+      setHalfMinutes(preset.halfMins);
+      setSecondsRemaining(preset.halfMins * 60);
+      setIsClockRunning(false);
+
+      const activeSquad = squad.filter((p) => availablePlayerIds.includes(p.id) && !p.isInjured);
+      setPitchPlayers(activeSquad.slice(0, capacity));
+      setSubBench(activeSquad.slice(capacity));
+    }
+  };
 
   const getRecommendation = () => {
     const activeCount = availablePlayerIds.length;
@@ -776,6 +801,13 @@ export default function MatchdayApp() {
   const activeFormations = FORMATION_OPTIONS[basePitchCapacity] || [
     { label: 'Standard Formation', roles: Array(basePitchCapacity).fill('OUTFIELD') },
   ];
+  const currentFormation = activeFormations[formationIndex] || activeFormations[0];
+
+  // Map pitch players to formation roles dynamically
+  const strikers = pitchPlayers.filter((_, idx) => currentFormation.roles[idx] === 'STR');
+  const midfielders = pitchPlayers.filter((_, idx) => currentFormation.roles[idx] === 'MID');
+  const defenders = pitchPlayers.filter((_, idx) => currentFormation.roles[idx] === 'DEF');
+  const goalkeepers = pitchPlayers.filter((_, idx) => currentFormation.roles[idx] === 'GK' || idx === 0);
 
   return (
     <div className="bg-black text-white min-h-screen pb-20 p-4 font-sans select-none max-w-md mx-auto">
@@ -799,19 +831,59 @@ export default function MatchdayApp() {
       {/* TAB 1: MATCHDAY TOUCHLINE */}
       {activeTab === 'matchday' && (
         <div>
-          {/* Format Bar & Settings */}
-          <div className="flex justify-between items-center bg-gray-950 px-3 py-2 rounded-lg mb-3 border border-gray-850">
-            <span className="text-xs font-bold text-lime-400">
-              {AGE_PRESETS[ageGroup]?.label || `${currentPitchCapacity}v${currentPitchCapacity}`}
-            </span>
-            <div className="flex gap-1.5">
+          {/* RESTORED AGE GROUP SELECTOR & FORMAT BAR */}
+          <div className="bg-gray-950 p-2.5 rounded-xl mb-3 border border-gray-850 flex flex-col gap-2">
+            <div className="flex justify-between items-center">
+              <select
+                value={ageGroup}
+                onChange={(e) => applyAgePreset(e.target.value)}
+                className="bg-black border border-gray-800 text-lime-400 font-black text-xs rounded p-2 focus:outline-none focus:border-lime-400 flex-1 mr-2"
+              >
+                {Object.keys(AGE_PRESETS).map((key) => (
+                  <option key={key} value={key}>
+                    {AGE_PRESETS[key].label}
+                  </option>
+                ))}
+              </select>
+
               <button
                 onClick={() => setViewMode(viewMode === 'pitch' ? 'cards' : 'pitch')}
-                className="text-[11px] bg-lime-500 text-black font-extrabold px-2.5 py-1 rounded shadow"
+                className="text-[10px] bg-lime-500 text-black font-extrabold px-2.5 py-2 rounded shadow shrink-0 mr-1.5"
               >
-                {viewMode === 'pitch' ? '🎴 CARDS VIEW' : '🏟️ PITCH BOARD'}
+                {viewMode === 'pitch' ? '🎴 CARDS' : '🏟️ BOARD'}
+              </button>
+
+              <button
+                onClick={() => setShowSettings(!showSettings)}
+                className="text-xs bg-gray-900 border border-gray-800 text-gray-300 font-bold px-2 py-2 rounded"
+              >
+                ⚙️
               </button>
             </div>
+
+            {/* Collapsible Format Settings */}
+            {showSettings && (
+              <div className="pt-2 border-t border-gray-850 flex justify-between items-center text-xs">
+                <div>
+                  <span className="text-gray-400 block text-[10px]">PITCH SEATS:</span>
+                  <input
+                    type="number"
+                    value={basePitchCapacity}
+                    onChange={(e) => setBasePitchCapacity(parseInt(e.target.value, 10) || 5)}
+                    className="bg-black border border-gray-800 text-lime-400 font-bold p-1 w-12 text-center rounded"
+                  />
+                </div>
+                <div>
+                  <span className="text-gray-400 block text-[10px]">HALF MINS:</span>
+                  <input
+                    type="number"
+                    value={halfMinutes}
+                    onChange={(e) => handleHalfMinutesChange(parseInt(e.target.value, 10) || 20)}
+                    className="bg-black border border-gray-800 text-lime-400 font-bold p-1 w-12 text-center rounded"
+                  />
+                </div>
+              </div>
+            )}
           </div>
 
           {/* FA POWERPLAY ALERT BANNER */}
@@ -904,14 +976,14 @@ export default function MatchdayApp() {
             </div>
           )}
 
-          {/* TACTICAL PITCH BOARD VIEW */}
+          {/* TACTICAL PITCH BOARD VIEW WITH DYNAMIC FORMATION UPDATES */}
           {viewMode === 'pitch' ? (
             <div className="mb-6 bg-gray-900 p-3.5 rounded-2xl border border-gray-800">
               <div className="flex justify-between items-center mb-3">
                 <span className="text-xs uppercase tracking-widest text-lime-400 font-bold">
-                  🏟️ Tactical Board ({pitchPlayers.length}/{currentPitchCapacity})
+                  🏟️ Tactical Pitch ({pitchPlayers.length}/{currentPitchCapacity})
                 </span>
-                {activeFormations.length > 1 && (
+                {activeFormations.length > 0 && (
                   <select
                     value={formationIndex}
                     onChange={(e) => setFormationIndex(parseInt(e.target.value, 10))}
@@ -924,61 +996,89 @@ export default function MatchdayApp() {
                 )}
               </div>
 
-              {/* GREEN FOOTBALL PITCH CANVAS */}
+              {/* DYNAMIC GREEN FOOTBALL PITCH CANVAS */}
               <div className="relative bg-emerald-900 border-2 border-emerald-500/60 rounded-xl p-3 min-h-[380px] flex flex-col justify-between shadow-inner overflow-hidden">
                 <div className="absolute inset-x-0 top-1/2 h-0.5 bg-emerald-500/30 -translate-y-1/2" />
                 <div className="absolute top-1/2 left-1/2 w-20 h-20 border border-emerald-500/30 rounded-full -translate-x-1/2 -translate-y-1/2" />
                 <div className="absolute top-0 left-1/2 w-32 h-10 border-b border-x border-emerald-500/30 rounded-b-lg -translate-x-1/2" />
                 <div className="absolute bottom-0 left-1/2 w-32 h-10 border-t border-x border-emerald-500/30 rounded-t-lg -translate-x-1/2" />
 
-                <div className="relative z-10 flex flex-col justify-between h-full min-h-[360px] py-1">
-                  {/* Strikers */}
-                  <div className="flex justify-around items-center">
-                    {pitchPlayers.slice(Math.ceil(pitchPlayers.length * 0.6)).map((player) => {
-                      const isSelected = selectedOnPitch === player.id;
-                      return (
-                        <button
-                          key={player.id}
-                          onClick={() => {
-                            triggerHaptic();
-                            setSelectedOnPitch(isSelected ? null : player.id);
-                          }}
-                          className={`p-2 rounded-xl text-center transition-all border ${
-                            isSelected ? 'bg-yellow-400 text-black border-yellow-200 scale-105 shadow-xl' : 'bg-black/80 border-lime-400/50 text-white'
-                          }`}
-                        >
-                          <span className="text-[10px] font-black block">#{player.squad_number} {player.name}</span>
-                          <span className="text-[9px] font-mono text-lime-300">{formatPlayerMins(player.seconds_played)}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                <div className="relative z-10 flex flex-col justify-between h-full min-h-[360px] py-1 gap-2">
+                  {/* Layer 1: Strikers */}
+                  {strikers.length > 0 && (
+                    <div className="flex justify-around items-center">
+                      {strikers.map((player) => {
+                        const isSelected = selectedOnPitch === player.id;
+                        return (
+                          <button
+                            key={player.id}
+                            onClick={() => {
+                              triggerHaptic();
+                              setSelectedOnPitch(isSelected ? null : player.id);
+                            }}
+                            className={`p-2 rounded-xl text-center transition-all border ${
+                              isSelected ? 'bg-yellow-400 text-black border-yellow-200 scale-105 shadow-xl' : 'bg-black/80 border-lime-400/50 text-white'
+                            }`}
+                          >
+                            <span className="text-[10px] font-black block">#{player.squad_number} {player.name}</span>
+                            <span className="text-[9px] font-mono text-lime-300">STR • {formatPlayerMins(player.seconds_played)}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
 
-                  {/* Midfielders / Defenders */}
-                  <div className="flex justify-around items-center">
-                    {pitchPlayers.slice(1, Math.ceil(pitchPlayers.length * 0.6)).map((player) => {
-                      const isSelected = selectedOnPitch === player.id;
-                      return (
-                        <button
-                          key={player.id}
-                          onClick={() => {
-                            triggerHaptic();
-                            setSelectedOnPitch(isSelected ? null : player.id);
-                          }}
-                          className={`p-2 rounded-xl text-center transition-all border ${
-                            isSelected ? 'bg-yellow-400 text-black border-yellow-200 scale-105 shadow-xl' : 'bg-black/80 border-lime-400/50 text-white'
-                          }`}
-                        >
-                          <span className="text-[10px] font-black block">#{player.squad_number} {player.name}</span>
-                          <span className="text-[9px] font-mono text-lime-300">{formatPlayerMins(player.seconds_played)}</span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                  {/* Layer 2: Midfielders */}
+                  {midfielders.length > 0 && (
+                    <div className="flex justify-around items-center">
+                      {midfielders.map((player) => {
+                        const isSelected = selectedOnPitch === player.id;
+                        return (
+                          <button
+                            key={player.id}
+                            onClick={() => {
+                              triggerHaptic();
+                              setSelectedOnPitch(isSelected ? null : player.id);
+                            }}
+                            className={`p-2 rounded-xl text-center transition-all border ${
+                              isSelected ? 'bg-yellow-400 text-black border-yellow-200 scale-105 shadow-xl' : 'bg-black/80 border-lime-400/50 text-white'
+                            }`}
+                          >
+                            <span className="text-[10px] font-black block">#{player.squad_number} {player.name}</span>
+                            <span className="text-[9px] font-mono text-lime-300">MID • {formatPlayerMins(player.seconds_played)}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
 
-                  {/* Goalkeeper */}
+                  {/* Layer 3: Defenders */}
+                  {defenders.length > 0 && (
+                    <div className="flex justify-around items-center">
+                      {defenders.map((player) => {
+                        const isSelected = selectedOnPitch === player.id;
+                        return (
+                          <button
+                            key={player.id}
+                            onClick={() => {
+                              triggerHaptic();
+                              setSelectedOnPitch(isSelected ? null : player.id);
+                            }}
+                            className={`p-2 rounded-xl text-center transition-all border ${
+                              isSelected ? 'bg-yellow-400 text-black border-yellow-200 scale-105 shadow-xl' : 'bg-black/80 border-lime-400/50 text-white'
+                            }`}
+                          >
+                            <span className="text-[10px] font-black block">#{player.squad_number} {player.name}</span>
+                            <span className="text-[9px] font-mono text-lime-300">DEF • {formatPlayerMins(player.seconds_played)}</span>
+                          </button>
+                        );
+                      })}
+                    </div>
+                  )}
+
+                  {/* Layer 4: Goalkeeper */}
                   <div className="flex justify-center items-center">
-                    {pitchPlayers.slice(0, 1).map((player) => {
+                    {goalkeepers.slice(0, 1).map((player) => {
                       const isSelected = selectedOnPitch === player.id;
                       return (
                         <button
@@ -991,8 +1091,8 @@ export default function MatchdayApp() {
                             isSelected ? 'bg-yellow-400 text-black border-yellow-200 scale-105 shadow-xl' : 'bg-black/90 border-lime-400 text-white'
                           }`}
                         >
-                          <span className="text-[10px] font-black block">🧤 #{player.squad_number} {player.name} (GK)</span>
-                          <span className="text-[9px] font-mono text-lime-300">{formatPlayerMins(player.seconds_played)}</span>
+                          <span className="text-[10px] font-black block">🧤 #{player.squad_number} {player.name}</span>
+                          <span className="text-[9px] font-mono text-lime-300">GK • {formatPlayerMins(player.seconds_played)}</span>
                         </button>
                       );
                     })}
@@ -1204,18 +1304,6 @@ export default function MatchdayApp() {
                   {mins}m
                 </button>
               ))}
-            </div>
-            <div className="flex items-center gap-3 pt-2 border-t border-gray-800">
-              <span className="text-xs font-bold text-gray-400">Custom Half Duration:</span>
-              <div className="flex items-center gap-1">
-                <input
-                  type="number"
-                  value={halfMinutes}
-                  onChange={(e) => handleHalfMinutesChange(parseInt(e.target.value, 10) || 20)}
-                  className="bg-black border border-gray-800 rounded p-1.5 w-16 text-center text-xs font-bold text-lime-400 focus:outline-none focus:border-lime-400"
-                />
-                <span className="text-xs text-gray-400 font-bold">mins</span>
-              </div>
             </div>
           </div>
 
@@ -1448,7 +1536,7 @@ export default function MatchdayApp() {
                 placeholder="Player Name"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                className="bg-black border border-gray-800 rounded-lg p-3 text-white focus:outline-none focus:border-lime-400 text-xs font-bold"
+                className="bg-black border border-gray-800 rounded-lg p-3 text-white text-xs font-bold"
               />
               <div className="flex gap-2">
                 <input
@@ -1456,12 +1544,12 @@ export default function MatchdayApp() {
                   placeholder="Kit #"
                   value={newNumber}
                   onChange={(e) => setNewNumber(e.target.value)}
-                  className="bg-black border border-gray-800 rounded-lg p-3 text-white w-1/3 focus:outline-none focus:border-lime-400 text-xs font-bold"
+                  className="bg-black border border-gray-800 rounded-lg p-3 text-white w-1/3 text-xs font-bold"
                 />
                 <select
                   value={newPosition}
                   onChange={(e) => setNewPosition(e.target.value)}
-                  className="bg-black border border-gray-800 rounded-lg p-3 text-white w-2/3 focus:outline-none focus:border-lime-400 text-xs font-bold"
+                  className="bg-black border border-gray-800 rounded-lg p-3 text-white w-2/3 text-xs font-bold"
                 >
                   <option value="Goalkeeper">Goalkeeper</option>
                   <option value="Defender">Defender</option>
@@ -1557,7 +1645,6 @@ export default function MatchdayApp() {
                           </div>
                         </div>
 
-                        {/* Season Badge Highlights */}
                         <div className="grid grid-cols-4 gap-1 text-[10px] bg-gray-950 p-2 rounded-lg text-center font-mono text-gray-400 border border-gray-850">
                           <div>
                             <span className="block text-gray-500 text-[9px]">MATCHES</span>
@@ -1591,7 +1678,6 @@ export default function MatchdayApp() {
         <div>
           <h1 className="text-xl font-black text-lime-400 mb-4">Season Equal-Time Audit</h1>
 
-          {/* Equal-Time Audit Heatmap Card */}
           <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-6">
             <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold mb-3 flex justify-between items-center">
               <span>⏱️ Team Playing Time Audit</span>
@@ -1609,7 +1695,6 @@ export default function MatchdayApp() {
                       <span className="text-gray-200">#{player.squad_number} {player.name}</span>
                       <span className="font-mono text-lime-400">{mins} mins ({player.total_matches} matches)</span>
                     </div>
-                    {/* Visual Progress Bar */}
                     <div className="w-full bg-gray-900 h-2 rounded-full overflow-hidden border border-gray-800">
                       <div
                         className={`h-full transition-all ${
@@ -1624,7 +1709,6 @@ export default function MatchdayApp() {
             </div>
           </div>
 
-          {/* Archived Match History */}
           <div className="bg-gray-900 p-4 rounded-xl border border-gray-800">
             <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-3 font-bold">
               📜 Saved Match History ({matchHistory.length})

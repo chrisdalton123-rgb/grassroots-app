@@ -171,6 +171,53 @@ export default function MatchdayApp() {
     );
   };
 
+  // Calculate projected match minutes per player based on scheduler settings
+  const getProjectedMinutes = () => {
+    const active = squad.filter((p) => availablePlayerIds.includes(p.id));
+    if (active.length === 0) return [];
+
+    const totalMatchMins = halfMinutes * 2;
+    const minutesMap: Record<string, number> = {};
+
+    active.forEach((p) => {
+      minutesMap[p.id] = 0;
+    });
+
+    let outfieldPlayers = [...active];
+    if (fixedGkId && minutesMap[fixedGkId] !== undefined) {
+      minutesMap[fixedGkId] = totalMatchMins;
+      outfieldPlayers = active.filter((p) => p.id !== fixedGkId);
+    }
+
+    const outfieldCapacity = fixedGkId ? pitchCapacity - 1 : pitchCapacity;
+    let currentOutfieldPitch = outfieldPlayers.slice(0, outfieldCapacity);
+    let currentBench = outfieldPlayers.slice(outfieldCapacity);
+
+    for (let minute = 1; minute <= totalMatchMins; minute++) {
+      currentOutfieldPitch.forEach((p) => {
+        minutesMap[p.id] = (minutesMap[p.id] || 0) + 1;
+      });
+
+      if (minute % rotationIntervalMins === 0 && minute < totalMatchMins) {
+        for (let i = 0; i < subsPerBatch; i++) {
+          if (currentBench.length === 0 || currentOutfieldPitch.length === 0) break;
+          const incoming = currentBench.shift();
+          const outgoing = currentOutfieldPitch.shift();
+
+          if (incoming && outgoing) {
+            currentOutfieldPitch.push(incoming);
+            currentBench.push(outgoing);
+          }
+        }
+      }
+    }
+
+    return active.map((p) => ({
+      ...p,
+      projectedMins: minutesMap[p.id] || 0,
+    }));
+  };
+
   // Rotation Engine with Fixed GK & Batch Sub Support
   const handleGenerateMatchPlan = () => {
     const active = squad.filter((p) => availablePlayerIds.includes(p.id));
@@ -546,6 +593,32 @@ export default function MatchdayApp() {
               </div>
             </div>
           </div>
+
+          {/* Projected Minutes Summary Card */}
+          {availablePlayerIds.length > 0 && (
+            <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
+              <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold mb-3 flex justify-between">
+                <span>📊 Projected Playing Time Breakdown</span>
+                <span>{halfMinutes * 2}m Total Match</span>
+              </h2>
+              <div className="grid grid-cols-2 gap-2">
+                {getProjectedMinutes().map((player) => (
+                  <div
+                    key={player.id}
+                    className="p-2.5 bg-black rounded-lg border border-gray-800 flex justify-between items-center text-xs"
+                  >
+                    <span className="font-bold text-gray-300">
+                      #{player.squad_number} {player.name}
+                      {player.id === fixedGkId ? ' 🧤' : ''}
+                    </span>
+                    <span className="font-mono font-extrabold text-lime-400">
+                      {player.projectedMins}m
+                    </span>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
 
           <button
             onClick={handleGenerateMatchPlan}

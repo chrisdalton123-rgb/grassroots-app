@@ -46,7 +46,7 @@ export default function MatchdayApp() {
   // Planner States
   const [availablePlayerIds, setAvailablePlayerIds] = useState<string[]>([]);
   const [fixedGkId, setFixedGkId] = useState<string | null>(null);
-  const [gkMode, setGkMode] = useState<'fixed' | 'split'>('fixed'); // 'fixed' or 'split' (half GK, half outfield)
+  const [gkMode, setGkMode] = useState<'fixed' | 'split'>('fixed');
   const [half2GkId, setHalf2GkId] = useState<string | null>(null);
   const [rotationIntervalMins, setRotationIntervalMins] = useState<number>(7);
   const [subsPerBatch, setSubsPerBatch] = useState<number>(1);
@@ -112,7 +112,6 @@ export default function MatchdayApp() {
     loadSquad();
   }, []);
 
-  // Recommendation engine based on player count and match format
   const getRecommendation = () => {
     const activeCount = availablePlayerIds.length;
     const subsCount = activeCount - pitchCapacity;
@@ -121,13 +120,13 @@ export default function MatchdayApp() {
       return { interval: 0, batch: 0, note: 'No subs needed (exact squad count).' };
     }
     if (subsCount === 1) {
-      return { interval: Math.floor((halfMinutes * 2) / (activeCount)), batch: 1, note: 'Recommend 1 sub every 5–7 mins for smooth rotation.' };
+      return { interval: Math.floor((halfMinutes * 2) / activeCount), batch: 1, note: `Recommend 1 sub every ${Math.floor((halfMinutes * 2) / activeCount)} mins for smooth rotation.` };
     }
     if (subsCount === 2) {
-      return { interval: 6, batch: 1, note: 'Recommend 1 sub every 6 mins (or 2 subs at half time).' };
+      return { interval: 6, batch: 1, note: 'Recommend 1 sub every 6 mins.' };
     }
     if (subsCount >= 3) {
-      return { interval: 7, batch: 2, note: `Recommend 2 subs every 7 mins to keep tempo high.` };
+      return { interval: 7, batch: 2, note: 'Recommend 2 subs every 7 mins to keep tempo high.' };
     }
     return { interval: 7, batch: 1, note: 'Standard rotation preset.' };
   };
@@ -146,6 +145,13 @@ export default function MatchdayApp() {
       setPitchPlayers(activeSquad.slice(0, capacity));
       setSubBench(activeSquad.slice(capacity));
     }
+  };
+
+  const handleHalfMinutesChange = (newMins: number) => {
+    const mins = Math.max(1, newMins);
+    setHalfMinutes(mins);
+    setSecondsRemaining(mins * 60);
+    setIsClockRunning(false);
   };
 
   useEffect(() => {
@@ -274,7 +280,6 @@ export default function MatchdayApp() {
     let interval = rotationIntervalMins;
 
     while (interval < totalMatchMins) {
-      // Half-time GK Rotation Swap notification if set
       if (gkMode === 'split' && interval === halfMinutes && half2GkId) {
         const h2Gk = active.find((p) => p.id === half2GkId);
         if (h2Gk) {
@@ -536,6 +541,40 @@ export default function MatchdayApp() {
       {activeTab === 'planner' && (
         <div>
           <h1 className="text-xl font-black text-lime-400 mb-2">Matchday Scheduler</h1>
+
+          {/* NEW: MATCH DURATION EDITOR CARD */}
+          <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
+            <label className="block text-xs font-bold text-lime-400 mb-2 uppercase tracking-wider">
+              ⏱️ Match Half Duration ({halfMinutes}m per half = {halfMinutes * 2}m total)
+            </label>
+            <div className="flex gap-2 mb-3">
+              {[20, 25, 30, 35].map((mins) => (
+                <button
+                  key={mins}
+                  onClick={() => handleHalfMinutesChange(mins)}
+                  className={`flex-1 py-2 rounded text-xs font-bold border transition-all ${
+                    halfMinutes === mins
+                      ? 'bg-lime-500 text-black border-lime-400'
+                      : 'bg-black border-gray-800 text-gray-400 hover:border-gray-700'
+                  }`}
+                >
+                  {mins}m
+                </button>
+              ))}
+            </div>
+            <div className="flex items-center gap-3 pt-2 border-t border-gray-800">
+              <span className="text-xs font-bold text-gray-400">Custom Half Duration:</span>
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  value={halfMinutes}
+                  onChange={(e) => handleHalfMinutesChange(parseInt(e.target.value, 10) || 20)}
+                  className="bg-black border border-gray-800 rounded p-1.5 w-16 text-center text-xs font-bold text-lime-400 focus:outline-none focus:border-lime-400"
+                />
+                <span className="text-xs text-gray-400 font-bold">mins</span>
+              </div>
+            </div>
+          </div>
 
           {/* Goalkeeper Mode Selector */}
           <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">

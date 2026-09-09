@@ -46,6 +46,8 @@ export default function MatchdayApp() {
   // Planner States
   const [availablePlayerIds, setAvailablePlayerIds] = useState<string[]>([]);
   const [fixedGkId, setFixedGkId] = useState<string | null>(null);
+  const [gkMode, setGkMode] = useState<'fixed' | 'split'>('fixed'); // 'fixed' or 'split' (half GK, half outfield)
+  const [half2GkId, setHalf2GkId] = useState<string | null>(null);
   const [rotationIntervalMins, setRotationIntervalMins] = useState<number>(7);
   const [subsPerBatch, setSubsPerBatch] = useState<number>(1);
   const [generatedPlan, setGeneratedPlan] = useState<SubPlanStep[]>([]);
@@ -110,6 +112,26 @@ export default function MatchdayApp() {
     loadSquad();
   }, []);
 
+  // Recommendation engine based on player count and match format
+  const getRecommendation = () => {
+    const activeCount = availablePlayerIds.length;
+    const subsCount = activeCount - pitchCapacity;
+
+    if (subsCount <= 0) {
+      return { interval: 0, batch: 0, note: 'No subs needed (exact squad count).' };
+    }
+    if (subsCount === 1) {
+      return { interval: Math.floor((halfMinutes * 2) / (activeCount)), batch: 1, note: 'Recommend 1 sub every 5–7 mins for smooth rotation.' };
+    }
+    if (subsCount === 2) {
+      return { interval: 6, batch: 1, note: 'Recommend 1 sub every 6 mins (or 2 subs at half time).' };
+    }
+    if (subsCount >= 3) {
+      return { interval: 7, batch: 2, note: `Recommend 2 subs every 7 mins to keep tempo high.` };
+    }
+    return { interval: 7, batch: 1, note: 'Standard rotation preset.' };
+  };
+
   const applyPreset = (presetKey: string) => {
     setAgeGroup(presetKey);
     const preset = AGE_PRESETS[presetKey];
@@ -171,7 +193,6 @@ export default function MatchdayApp() {
     );
   };
 
-  // Calculate projected match minutes per player based on scheduler settings
   const getProjectedMinutes = () => {
     const active = squad.filter((p) => availablePlayerIds.includes(p.id));
     if (active.length === 0) return [];
@@ -184,12 +205,13 @@ export default function MatchdayApp() {
     });
 
     let outfieldPlayers = [...active];
-    if (fixedGkId && minutesMap[fixedGkId] !== undefined) {
+
+    if (gkMode === 'fixed' && fixedGkId && minutesMap[fixedGkId] !== undefined) {
       minutesMap[fixedGkId] = totalMatchMins;
       outfieldPlayers = active.filter((p) => p.id !== fixedGkId);
     }
 
-    const outfieldCapacity = fixedGkId ? pitchCapacity - 1 : pitchCapacity;
+    const outfieldCapacity = (gkMode === 'fixed' && fixedGkId) ? pitchCapacity - 1 : pitchCapacity;
     let currentOutfieldPitch = outfieldPlayers.slice(0, outfieldCapacity);
     let currentBench = outfieldPlayers.slice(outfieldCapacity);
 
@@ -218,7 +240,6 @@ export default function MatchdayApp() {
     }));
   };
 
-  // Rotation Engine with Fixed GK & Batch Sub Support
   const handleGenerateMatchPlan = () => {
     const active = squad.filter((p) => availablePlayerIds.includes(p.id));
     if (active.length <= pitchCapacity) return;
@@ -226,14 +247,14 @@ export default function MatchdayApp() {
     let gkPlayer: Player | undefined;
     let outfieldPlayers = [...active];
 
-    if (fixedGkId) {
+    if (gkMode === 'fixed' && fixedGkId) {
       gkPlayer = active.find((p) => p.id === fixedGkId);
       if (gkPlayer) {
         outfieldPlayers = active.filter((p) => p.id !== fixedGkId);
       }
     }
 
-    const outfieldCapacity = gkPlayer ? pitchCapacity - 1 : pitchCapacity;
+    const outfieldCapacity = (gkMode === 'fixed' && fixedGkId) ? pitchCapacity - 1 : pitchCapacity;
 
     const startingOutfieldPitch = outfieldPlayers.slice(0, outfieldCapacity);
     const startingBench = outfieldPlayers.slice(outfieldCapacity);
@@ -253,6 +274,18 @@ export default function MatchdayApp() {
     let interval = rotationIntervalMins;
 
     while (interval < totalMatchMins) {
+      // Half-time GK Rotation Swap notification if set
+      if (gkMode === 'split' && interval === halfMinutes && half2GkId) {
+        const h2Gk = active.find((p) => p.id === half2GkId);
+        if (h2Gk) {
+          plan.push({
+            minute: interval,
+            offPlayer: `[HALF TIME] Change GK`,
+            onPlayer: `#${h2Gk.squad_number} ${h2Gk.name} -> GOAL`,
+          });
+        }
+      }
+
       for (let i = 0; i < subsPerBatch; i++) {
         if (currentBench.length === 0 || currentOutfieldPitch.length === 0) break;
 
@@ -305,6 +338,8 @@ export default function MatchdayApp() {
   if (loading) {
     return <div className="bg-black text-white min-h-screen p-8 text-center font-bold">Loading Co-Gaffer...</div>;
   }
+
+  const rec = getRecommendation();
 
   return (
     <div className="bg-black text-white min-h-screen pb-20 p-4 font-sans select-none max-w-md mx-auto">
@@ -389,7 +424,7 @@ export default function MatchdayApp() {
           {generatedPlan.length > 0 && (
             <div className="bg-gray-900 p-3.5 rounded-xl border border-lime-500/40 mb-4">
               <h3 className="text-xs font-black text-lime-400 mb-2 uppercase tracking-wider">
-                ⏱️ Pre-Planned Outfield Sub Schedule
+                ⏱️ Pre-Planned Sub Schedule
               </h3>
               <div className="flex gap-2 overflow-x-auto pb-1 text-xs">
                 {generatedPlan.map((step, idx) => (
@@ -412,7 +447,7 @@ export default function MatchdayApp() {
             <div className="grid grid-cols-2 gap-3">
               {pitchPlayers.map((player) => {
                 const isSelected = selectedOnPitch === player.id;
-                const isFixedGk = player.id === fixedGkId;
+                const isFixedGk = gkMode === 'fixed' && player.id === fixedGkId;
                 const isHighTime = !isFixedGk && player.seconds_played > 0 && player.seconds_played === highestPitchSeconds;
 
                 return (
@@ -501,29 +536,80 @@ export default function MatchdayApp() {
       {activeTab === 'planner' && (
         <div>
           <h1 className="text-xl font-black text-lime-400 mb-2">Matchday Scheduler</h1>
-          <p className="text-xs text-gray-400 mb-4">
-            Select available squad members and lock a fixed Goalkeeper to exclude them from outfield rotations.
-          </p>
 
-          {/* Fixed Goalkeeper Selector */}
+          {/* Goalkeeper Mode Selector */}
           <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
             <label className="block text-xs font-bold text-lime-400 mb-2 uppercase tracking-wider">
-              🧤 Fixed Full-Match Goalkeeper (Excludes from Sub Rotations)
+              🧤 Goalkeeper Rotation Strategy
             </label>
-            <select
-              value={fixedGkId || ''}
-              onChange={(e) => setFixedGkId(e.target.value || null)}
-              className="w-full bg-black border border-gray-800 rounded-lg p-3 text-white text-xs font-bold focus:outline-none focus:border-lime-400"
-            >
-              <option value="">No Fixed GK (Rotate all players)</option>
-              {squad
-                .filter((p) => availablePlayerIds.includes(p.id))
-                .map((player) => (
-                  <option key={player.id} value={player.id}>
-                    #{player.squad_number} {player.name} ({player.preferred_position})
-                  </option>
-                ))}
-            </select>
+            <div className="flex gap-2 mb-3">
+              <button
+                onClick={() => setGkMode('fixed')}
+                className={`flex-1 py-2 rounded text-xs font-bold border ${
+                  gkMode === 'fixed' ? 'bg-lime-500 text-black border-lime-400' : 'bg-black border-gray-800 text-gray-400'
+                }`}
+              >
+                Fixed GK (Full Match)
+              </button>
+              <button
+                onClick={() => setGkMode('split')}
+                className={`flex-1 py-2 rounded text-xs font-bold border ${
+                  gkMode === 'split' ? 'bg-lime-500 text-black border-lime-400' : 'bg-black border-gray-800 text-gray-400'
+                }`}
+              >
+                Split Halves / Outfield Rotation
+              </button>
+            </div>
+
+            {gkMode === 'fixed' ? (
+              <select
+                value={fixedGkId || ''}
+                onChange={(e) => setFixedGkId(e.target.value || null)}
+                className="w-full bg-black border border-gray-800 rounded-lg p-2.5 text-white text-xs font-bold"
+              >
+                <option value="">No Fixed GK (Rotate everyone)</option>
+                {squad
+                  .filter((p) => availablePlayerIds.includes(p.id))
+                  .map((p) => (
+                    <option key={p.id} value={p.id}>
+                      #{p.squad_number} {p.name} ({p.preferred_position})
+                    </option>
+                  ))}
+              </select>
+            ) : (
+              <div className="grid grid-cols-2 gap-2">
+                <div>
+                  <label className="block text-[10px] text-gray-400 mb-1">Half 1 Goalkeeper</label>
+                  <select
+                    value={fixedGkId || ''}
+                    onChange={(e) => setFixedGkId(e.target.value || null)}
+                    className="w-full bg-black border border-gray-800 rounded p-2 text-white text-xs font-bold"
+                  >
+                    <option value="">Select H1 GK</option>
+                    {squad
+                      .filter((p) => availablePlayerIds.includes(p.id))
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>#{p.squad_number} {p.name}</option>
+                      ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="block text-[10px] text-gray-400 mb-1">Half 2 Goalkeeper</label>
+                  <select
+                    value={half2GkId || ''}
+                    onChange={(e) => setHalf2GkId(e.target.value || null)}
+                    className="w-full bg-black border border-gray-800 rounded p-2 text-white text-xs font-bold"
+                  >
+                    <option value="">Select H2 GK</option>
+                    {squad
+                      .filter((p) => availablePlayerIds.includes(p.id))
+                      .map((p) => (
+                        <option key={p.id} value={p.id}>#{p.squad_number} {p.name}</option>
+                      ))}
+                  </select>
+                </div>
+              </div>
+            )}
           </div>
 
           {/* Availability Selection */}
@@ -534,7 +620,7 @@ export default function MatchdayApp() {
             <div className="grid grid-cols-2 gap-2">
               {squad.map((player) => {
                 const isChecked = availablePlayerIds.includes(player.id);
-                const isGk = player.id === fixedGkId;
+                const isGk = player.id === fixedGkId || player.id === half2GkId;
 
                 return (
                   <button
@@ -556,6 +642,25 @@ export default function MatchdayApp() {
             </div>
           </div>
 
+          {/* Smart Co-Gaffer Recommendation Banner */}
+          {availablePlayerIds.length > pitchCapacity && (
+            <div className="bg-lime-500/10 border border-lime-500/40 p-3 rounded-xl mb-4 text-xs">
+              <div className="flex items-center gap-2 mb-1">
+                <span className="text-lime-400 font-black">💡 CO-GAFFER RECOMMENDATION</span>
+              </div>
+              <p className="text-gray-300 text-[11px] font-medium">{rec.note}</p>
+              <button
+                onClick={() => {
+                  setRotationIntervalMins(rec.interval);
+                  setSubsPerBatch(rec.batch);
+                }}
+                className="mt-2 bg-lime-500 text-black font-extrabold px-3 py-1 rounded text-[10px] hover:bg-lime-400"
+              >
+                APPLY RECOMMENDATION ({rec.interval}m / {rec.batch} subs)
+              </button>
+            </div>
+          )}
+
           {/* Sub Interval & Batch Size Setting Card */}
           <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
             <div className="grid grid-cols-2 gap-3">
@@ -569,10 +674,10 @@ export default function MatchdayApp() {
                   className="w-full bg-black border border-gray-800 rounded-lg p-2.5 text-white text-xs font-bold focus:outline-none focus:border-lime-400"
                 >
                   <option value={5}>Every 5 mins</option>
+                  <option value={6}>Every 6 mins</option>
                   <option value={7}>Every 7 mins</option>
+                  <option value={8}>Every 8 mins</option>
                   <option value={10}>Every 10 mins</option>
-                  <option value={12}>Every 12 mins</option>
-                  <option value={15}>Every 15 mins</option>
                 </select>
               </div>
 
@@ -588,7 +693,6 @@ export default function MatchdayApp() {
                   <option value={1}>1 Player at a time</option>
                   <option value={2}>2 Players at once</option>
                   <option value={3}>3 Players at once</option>
-                  <option value={4}>4 Players at once</option>
                 </select>
               </div>
             </div>
@@ -609,7 +713,7 @@ export default function MatchdayApp() {
                   >
                     <span className="font-bold text-gray-300">
                       #{player.squad_number} {player.name}
-                      {player.id === fixedGkId ? ' 🧤' : ''}
+                      {player.id === fixedGkId || player.id === half2GkId ? ' 🧤' : ''}
                     </span>
                     <span className="font-mono font-extrabold text-lime-400">
                       {player.projectedMins}m

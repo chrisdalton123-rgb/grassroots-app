@@ -12,6 +12,16 @@ type Player = {
   current_position: string;
 };
 
+// Updated FA Grassroots Formats
+const AGE_PRESETS: Record<string, { pitchCount: number; halfMins: number; label: string }> = {
+  'U7': { pitchCount: 3, halfMins: 10, label: 'U7 (3v3 Carousel — 10m Games)' },
+  'U8-U9': { pitchCount: 5, halfMins: 20, label: 'U8/U9 (5v5 — 20m Halves)' },
+  'U10-U11': { pitchCount: 7, halfMins: 25, label: 'U10/U11 (7v7 — 25m Halves)' },
+  'U12-U13': { pitchCount: 9, halfMins: 30, label: 'U12/U13 (9v9 — 30m Halves)' },
+  'U14-U15': { pitchCount: 11, halfMins: 35, label: 'U14/U15 (11v11 — 35m Halves)' },
+  'TOURNAMENT': { pitchCount: 6, halfMins: 10, label: 'Summer 6s (6v6 — 10m Games)' },
+};
+
 export default function MatchdayApp() {
   const [activeTab, setActiveTab] = useState<'matchday' | 'squad'>('matchday');
   const [squad, setSquad] = useState<Player[]>([]);
@@ -20,13 +30,19 @@ export default function MatchdayApp() {
   const [selectedOnPitch, setSelectedOnPitch] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
+  // Match & Format Settings State
+  const [ageGroup, setAgeGroup] = useState<string>('U9-U10');
+  const [pitchCapacity, setPitchCapacity] = useState<number>(7);
+  const [halfMinutes, setHalfMinutes] = useState<number>(25);
+  const [showSettings, setShowSettings] = useState<boolean>(false);
+
   // New Player Form State
   const [newName, setNewName] = useState('');
   const [newNumber, setNewNumber] = useState('');
   const [newPosition, setNewPosition] = useState('Midfielder');
 
   // Match clock states
-  const [secondsRemaining, setSecondsRemaining] = useState(600);
+  const [secondsRemaining, setSecondsRemaining] = useState<number>(25 * 60);
   const [isClockRunning, setIsClockRunning] = useState(false);
   const [currentPeriod, setCurrentPeriod] = useState(1);
 
@@ -41,17 +57,12 @@ export default function MatchdayApp() {
     return `${mins} mins`;
   };
 
-  // Find lowest seconds among all players for equality tracking
+  // Lowest/Highest minutes helpers
   const allPlayers = [...pitchPlayers, ...subBench];
-  const lowestSeconds = allPlayers.length > 0 
-    ? Math.min(...allPlayers.map((p) => p.seconds_played)) 
-    : 0;
+  const lowestSeconds = allPlayers.length > 0 ? Math.min(...allPlayers.map((p) => p.seconds_played)) : 0;
+  const highestPitchSeconds = pitchPlayers.length > 0 ? Math.max(...pitchPlayers.map((p) => p.seconds_played)) : 0;
 
-  // Find highest seconds among pitch players to highlight who needs a sub
-  const highestPitchSeconds = pitchPlayers.length > 0 
-    ? Math.max(...pitchPlayers.map((p) => p.seconds_played)) 
-    : 0;
-
+  // Load Squad from Supabase
   const loadSquad = async () => {
     setLoading(true);
     const { data, error } = await supabase
@@ -72,8 +83,8 @@ export default function MatchdayApp() {
       }));
 
       setSquad(formatted);
-      setPitchPlayers(formatted.slice(0, 7));
-      setSubBench(formatted.slice(7));
+      setPitchPlayers(formatted.slice(0, pitchCapacity));
+      setSubBench(formatted.slice(pitchCapacity));
     }
     setLoading(false);
   };
@@ -82,6 +93,23 @@ export default function MatchdayApp() {
     loadSquad();
   }, []);
 
+  // Update pitch layout when format settings change
+  const applyPreset = (presetKey: string) => {
+    setAgeGroup(presetKey);
+    const preset = AGE_PRESETS[presetKey];
+    if (preset) {
+      setPitchCapacity(preset.pitchCount);
+      setHalfMinutes(preset.halfMins);
+      setSecondsRemaining(preset.halfMins * 60);
+      setIsClockRunning(false);
+
+      // Re-partition pitch vs bench
+      setPitchPlayers(squad.slice(0, preset.pitchCount));
+      setSubBench(squad.slice(preset.pitchCount));
+    }
+  };
+
+  // Live Timer
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
     if (isClockRunning && secondsRemaining > 0) {
@@ -133,9 +161,7 @@ export default function MatchdayApp() {
       },
     ]);
 
-    if (error) {
-      console.error('Error adding player:', error);
-    } else {
+    if (!error) {
       setNewName('');
       setNewNumber('');
       loadSquad();
@@ -144,15 +170,11 @@ export default function MatchdayApp() {
 
   const handleDeletePlayer = async (id: string) => {
     const { error } = await supabase.from('players').delete().eq('id', id);
-    if (error) {
-      console.error('Error deleting player:', error);
-    } else {
-      loadSquad();
-    }
+    if (!error) loadSquad();
   };
 
   if (loading) {
-    return <div className="bg-black text-white min-h-screen p-8 text-center font-bold">Loading Squad Data...</div>;
+    return <div className="bg-black text-white min-h-screen p-8 text-center font-bold">Loading Matchday Dashboard...</div>;
   }
 
   return (
@@ -160,7 +182,76 @@ export default function MatchdayApp() {
       {/* TAB 1: MATCHDAY TOUCHLINE */}
       {activeTab === 'matchday' && (
         <div>
-          {/* Match Header */}
+          {/* Format Bar */}
+          <div className="flex justify-between items-center bg-gray-950 px-3 py-2 rounded-lg mb-3 border border-gray-850">
+            <span className="text-xs font-bold text-lime-400">
+              {AGE_PRESETS[ageGroup]?.label || `${pitchCapacity}v${pitchCapacity}`}
+            </span>
+            <button
+              onClick={() => setShowSettings(!showSettings)}
+              className="text-xs bg-gray-800 hover:bg-gray-700 text-gray-300 font-bold px-2.5 py-1 rounded border border-gray-700"
+            >
+              ⚙️ CHANGE FORMAT
+            </button>
+          </div>
+
+          {/* Settings Modal Drawer */}
+          {showSettings && (
+            <div className="bg-gray-900 border border-lime-500/50 p-4 rounded-xl mb-4 text-xs">
+              <h3 className="font-extrabold text-sm text-lime-400 mb-3 uppercase tracking-wider">
+                Select Age Bracket / Format
+              </h3>
+              <div className="grid grid-cols-1 gap-2 mb-4">
+                {Object.keys(AGE_PRESETS).map((key) => (
+                  <button
+                    key={key}
+                    onClick={() => applyPreset(key)}
+                    className={`p-2.5 rounded-lg text-left font-bold border transition-all ${
+                      ageGroup === key
+                        ? 'bg-lime-500 text-black border-lime-400'
+                        : 'bg-black border-gray-800 text-gray-300 hover:border-gray-700'
+                    }`}
+                  >
+                    {AGE_PRESETS[key].label}
+                  </button>
+                ))}
+              </div>
+
+              {/* Custom Adjustments */}
+              <div className="pt-3 border-t border-gray-800 flex gap-2">
+                <div className="flex-1">
+                  <label className="block text-gray-400 mb-1 font-bold">Pitch Size</label>
+                  <input
+                    type="number"
+                    value={pitchCapacity}
+                    onChange={(e) => setPitchCapacity(parseInt(e.target.value) || 5)}
+                    className="w-full bg-black border border-gray-800 p-2 rounded text-white font-mono"
+                  />
+                </div>
+                <div className="flex-1">
+                  <label className="block text-gray-400 mb-1 font-bold">Half Mins</label>
+                  <input
+                    type="number"
+                    value={halfMinutes}
+                    onChange={(e) => {
+                      const mins = parseInt(e.target.value) || 10;
+                      setHalfMinutes(mins);
+                      setSecondsRemaining(mins * 60);
+                    }}
+                    className="w-full bg-black border border-gray-800 p-2 rounded text-white font-mono"
+                  />
+                </div>
+              </div>
+              <button
+                onClick={() => setShowSettings(false)}
+                className="w-full mt-3 bg-gray-800 text-white font-bold p-2 rounded hover:bg-gray-700"
+              >
+                CLOSE SETTINGS
+              </button>
+            </div>
+          )}
+
+          {/* Match Header Clock */}
           <div className="flex justify-between items-center bg-gray-900 p-4 rounded-xl mb-4 border border-gray-800">
             <div>
               <span className="text-xs text-gray-400 block font-bold uppercase tracking-wider">
@@ -183,7 +274,7 @@ export default function MatchdayApp() {
           {/* Pitch Section */}
           <div className="mb-6">
             <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-2 font-bold flex justify-between">
-              <span>On Pitch (Tap to sub)</span>
+              <span>On Pitch ({pitchPlayers.length}/{pitchCapacity})</span>
               <span className="text-amber-400">🔥 High Mins Alert</span>
             </h2>
             <div className="grid grid-cols-2 gap-3">
@@ -229,7 +320,7 @@ export default function MatchdayApp() {
           {/* Bench Section */}
           <div className="bg-gray-900 p-4 rounded-xl border border-gray-800">
             <h2 className="text-xs uppercase tracking-widest text-amber-400 mb-2 font-bold flex justify-between">
-              <span>Substitutes Bench</span>
+              <span>Substitutes Bench ({subBench.length})</span>
               <span className="text-lime-400">⭐ Priority Sub</span>
             </h2>
             <div className="flex flex-col gap-2">

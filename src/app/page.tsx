@@ -20,8 +20,10 @@ type SubPlanStep = {
 };
 
 type MatchGoal = {
+  id: string;
   scorerName: string;
   minute: number;
+  isOpponent: boolean;
 };
 
 const AGE_PRESETS: Record<string, { pitchCount: number; halfMins: number; label: string }> = {
@@ -48,10 +50,11 @@ export default function MatchdayApp() {
   const [carouselPitches, setCarouselPitches] = useState<number>(2);
   const [showSettings, setShowSettings] = useState<boolean>(false);
 
-  // Match Event Logging
+  // Match Event & Scoreboard Logging
   const [goals, setGoals] = useState<MatchGoal[]>([]);
   const [playerOfTheMatch, setPlayerOfTheMatch] = useState<string | null>(null);
   const [opponentName, setOpponentName] = useState<string>('Opponent');
+  const [showGoalLog, setShowGoalLog] = useState<boolean>(false);
 
   // Planner States
   const [availablePlayerIds, setAvailablePlayerIds] = useState<string[]>([]);
@@ -110,6 +113,9 @@ export default function MatchdayApp() {
     const mins = Math.floor(totalSeconds / 60);
     return `${mins} mins`;
   };
+
+  const ourGoalsCount = goals.filter((g) => !g.isOpponent).length;
+  const opponentGoalsCount = goals.filter((g) => g.isOpponent).length;
 
   const allPlayers = [...pitchPlayers, ...subBench];
   const lowestSeconds = allPlayers.length > 0 ? Math.min(...allPlayers.map((p) => p.seconds_played)) : 0;
@@ -246,10 +252,23 @@ export default function MatchdayApp() {
     setSelectedOnPitch(null);
   };
 
-  const handleLogGoal = (playerName: string) => {
+  const handleLogGoal = (playerName: string, isOpponent = false) => {
     triggerHaptic();
     const currentMin = Math.max(1, Math.ceil((halfMinutes * 60 - secondsRemaining) / 60));
-    setGoals((prev) => [...prev, { scorerName: playerName, minute: currentMin }]);
+    setGoals((prev) => [
+      ...prev,
+      {
+        id: Math.random().toString(),
+        scorerName: playerName,
+        minute: currentMin,
+        isOpponent,
+      },
+    ]);
+  };
+
+  const handleRemoveGoal = (goalId: string) => {
+    triggerHaptic();
+    setGoals((prev) => prev.filter((g) => g.id !== goalId));
   };
 
   const togglePlayerAvailability = (id: string) => {
@@ -414,11 +433,13 @@ export default function MatchdayApp() {
   // Generate WhatsApp Shareable Summary Text
   const generateWhatsAppSummary = () => {
     let text = `⚽ *MATCHDAY RECAP — CO-GAFFER*\n`;
-    text += `Vs. ${opponentName} (${ageGroup})\n\n`;
+    text += `Vs. ${opponentName} (${ageGroup})\n`;
+    text += `Score: Our Team ${ourGoalsCount} - ${opponentGoalsCount} ${opponentName}\n\n`;
     
-    if (goals.length > 0) {
-      text += `🎯 *Goals Scored:* ${goals.length}\n`;
-      goals.forEach((g) => {
+    const ourGoals = goals.filter((g) => !g.isOpponent);
+    if (ourGoals.length > 0) {
+      text += `🎯 *Goals Scored:* ${ourGoals.length}\n`;
+      ourGoals.forEach((g) => {
         text += `• ${g.scorerName} (${g.minute}')\n`;
       });
       text += `\n`;
@@ -536,25 +557,81 @@ export default function MatchdayApp() {
             </div>
           )}
 
-          {/* Match Header Clock */}
-          <div className="flex justify-between items-center bg-gray-900 p-4 rounded-xl mb-4 border border-gray-800">
-            <div>
-              <span className="text-xs text-gray-400 block font-bold uppercase tracking-wider">
-                {ageGroup === 'U7' ? `Mini-Game ${currentPeriod}` : `Half ${currentPeriod}`} — Live
-              </span>
-              <h1 className="text-2xl font-black text-lime-400 font-mono tracking-tight">
-                {formatTime(secondsRemaining)}
-              </h1>
+          {/* SCOREBOARD & MATCH CLOCK HEADER */}
+          <div className="bg-gray-900 p-4 rounded-xl mb-4 border border-gray-800">
+            <div className="flex justify-between items-center mb-3 pb-3 border-b border-gray-800">
+              {/* Scoreboard Display */}
+              <div className="flex items-center gap-3">
+                <div className="text-center">
+                  <span className="text-[10px] text-gray-400 font-bold block uppercase">OUR TEAM</span>
+                  <span className="text-2xl font-black text-lime-400 font-mono">{ourGoalsCount}</span>
+                </div>
+                <span className="text-gray-600 font-black text-lg">-</span>
+                <div className="text-center">
+                  <span className="text-[10px] text-gray-400 font-bold block uppercase truncate max-w-[70px]">{opponentName}</span>
+                  <span className="text-2xl font-black text-red-400 font-mono">{opponentGoalsCount}</span>
+                </div>
+              </div>
+
+              {/* Opponent Goal Log Button */}
+              <button
+                onClick={() => handleLogGoal(opponentName, true)}
+                className="px-2.5 py-1.5 bg-red-500/20 text-red-400 border border-red-500/40 rounded font-black text-[10px] active:scale-95"
+              >
+                + OPPONENT GOAL
+              </button>
             </div>
-            <button
-              onClick={toggleClock}
-              className={`px-5 py-3 font-black text-sm rounded-lg active:scale-95 transition-all ${
-                isClockRunning ? 'bg-red-500 text-white' : 'bg-lime-500 text-black'
-              }`}
-            >
-              {isClockRunning ? 'PAUSE' : 'START'}
-            </button>
+
+            <div className="flex justify-between items-center">
+              <div>
+                <span className="text-xs text-gray-400 block font-bold uppercase tracking-wider">
+                  {ageGroup === 'U7' ? `Mini-Game ${currentPeriod}` : `Half ${currentPeriod}`} — Live
+                </span>
+                <h1 className="text-2xl font-black text-lime-400 font-mono tracking-tight">
+                  {formatTime(secondsRemaining)}
+                </h1>
+              </div>
+              <button
+                onClick={toggleClock}
+                className={`px-5 py-3 font-black text-sm rounded-lg active:scale-95 transition-all ${
+                  isClockRunning ? 'bg-red-500 text-white' : 'bg-lime-500 text-black'
+                }`}
+              >
+                {isClockRunning ? 'PAUSE' : 'START'}
+              </button>
+            </div>
           </div>
+
+          {/* Goal Log Accordion Toggle */}
+          {goals.length > 0 && (
+            <div className="bg-gray-900 p-3 rounded-xl border border-gray-800 mb-4">
+              <button
+                onClick={() => setShowGoalLog(!showGoalLog)}
+                className="w-full flex justify-between items-center text-xs font-bold text-lime-400"
+              >
+                <span>⚽ Goals Timeline ({goals.length})</span>
+                <span>{showGoalLog ? '▲ HIDE' : '▼ VIEW LOG'}</span>
+              </button>
+
+              {showGoalLog && (
+                <div className="mt-3 flex flex-col gap-1.5 pt-2 border-t border-gray-800">
+                  {goals.map((g) => (
+                    <div key={g.id} className="flex justify-between items-center text-xs bg-black p-2 rounded border border-gray-800">
+                      <span className={g.isOpponent ? 'text-red-400 font-bold' : 'text-lime-400 font-bold'}>
+                        {g.minute}' — {g.scorerName} {g.isOpponent ? '⚽ (Opponent)' : '⚽'}
+                      </span>
+                      <button
+                        onClick={() => handleRemoveGoal(g.id)}
+                        className="text-red-500 hover:text-red-400 font-extrabold text-[10px] px-1.5 py-0.5 rounded border border-red-500/30"
+                      >
+                        ❌ UNDO
+                      </button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+          )}
 
           {/* Pre-Planned Sub Schedule Widget */}
           {generatedPlan.length > 0 && (
@@ -622,9 +699,8 @@ export default function MatchdayApp() {
                       </div>
                     </button>
 
-                    {/* Quick Goal Log Button */}
                     <button
-                      onClick={() => handleLogGoal(player.name)}
+                      onClick={() => handleLogGoal(player.name, false)}
                       className="mt-1 w-full bg-gray-950 hover:bg-lime-500 hover:text-black border border-gray-800 text-gray-300 text-[10px] font-bold py-1 rounded transition-all"
                     >
                       ⚽ LOG GOAL

@@ -12,8 +12,9 @@ type Player = {
   current_position: string;
 };
 
+// Current FA Grassroots Regulations & Formats
 const AGE_PRESETS: Record<string, { pitchCount: number; halfMins: number; label: string }> = {
-  'U7': { pitchCount: 3, halfMins: 8, label: 'U7 (3v3 Carousel Festival — Multi-Pitch)' },
+  'U7': { pitchCount: 3, halfMins: 10, label: 'U7 (3v3 Carousel Festival — Multi-Pitch)' },
   'U8-U9': { pitchCount: 5, halfMins: 20, label: 'U8/U9 (5v5 — 20m Halves)' },
   'U10-U11': { pitchCount: 7, halfMins: 25, label: 'U10/U11 (7v7 — 25m Halves)' },
   'U12-U13': { pitchCount: 9, halfMins: 30, label: 'U12/U13 (9v9 — 30m Halves)' },
@@ -29,10 +30,10 @@ export default function MatchdayApp() {
   const [selectedOnPitch, setSelectedOnPitch] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
 
-  // Carousel specific state
-  const [carouselPitches, setCarouselPitches] = useState<number>(2); // 2 to 4 mini pitches
+  // Carousel Specific State
+  const [carouselPitches, setCarouselPitches] = useState<number>(2);
 
-  // Format Settings State
+  // Match & Format Settings State
   const [ageGroup, setAgeGroup] = useState<string>('U8-U9');
   const [pitchCapacity, setPitchCapacity] = useState<number>(5);
   const [halfMinutes, setHalfMinutes] = useState<number>(20);
@@ -43,7 +44,7 @@ export default function MatchdayApp() {
   const [newNumber, setNewNumber] = useState('');
   const [newPosition, setNewPosition] = useState('Midfielder');
 
-  // Match clock states
+  // Match Clock States
   const [secondsRemaining, setSecondsRemaining] = useState<number>(20 * 60);
   const [isClockRunning, setIsClockRunning] = useState(false);
   const [currentPeriod, setCurrentPeriod] = useState(1);
@@ -59,10 +60,12 @@ export default function MatchdayApp() {
     return `${mins} mins`;
   };
 
+  // Equal minutes calculation helpers
   const allPlayers = [...pitchPlayers, ...subBench];
   const lowestSeconds = allPlayers.length > 0 ? Math.min(...allPlayers.map((p) => p.seconds_played)) : 0;
   const highestPitchSeconds = pitchPlayers.length > 0 ? Math.max(...pitchPlayers.map((p) => p.seconds_played)) : 0;
 
+  // Fetch squad from Supabase
   const loadSquad = async () => {
     setLoading(true);
     const { data, error } = await supabase
@@ -93,6 +96,7 @@ export default function MatchdayApp() {
     loadSquad();
   }, []);
 
+  // Change FA Match Format Preset
   const applyPreset = (presetKey: string) => {
     setAgeGroup(presetKey);
     const preset = AGE_PRESETS[presetKey];
@@ -108,6 +112,7 @@ export default function MatchdayApp() {
     }
   };
 
+  // Live Timer Effect
   useEffect(() => {
     let interval: NodeJS.Timeout | null = null;
     if (isClockRunning && secondsRemaining > 0) {
@@ -128,6 +133,7 @@ export default function MatchdayApp() {
     };
   }, [isClockRunning, secondsRemaining]);
 
+  // Handle Touchline Substitutions
   const handleSubSwap = (benchPlayerId: string) => {
     if (!selectedOnPitch) return;
     const onPitchIndex = pitchPlayers.findIndex((p) => p.id === selectedOnPitch);
@@ -147,7 +153,7 @@ export default function MatchdayApp() {
     setSelectedOnPitch(null);
   };
 
-  // Carousel Rotation - shift pitch players round-robin style
+  // Rotate Carousel Pitch Players
   const handleCarouselRotate = () => {
     if (pitchPlayers.length < 2) return;
     const rotated = [...pitchPlayers];
@@ -156,6 +162,7 @@ export default function MatchdayApp() {
     setPitchPlayers(rotated);
   };
 
+  // Add New Player
   const handleAddPlayer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName || !newNumber) return;
@@ -175,17 +182,28 @@ export default function MatchdayApp() {
     }
   };
 
+  // Delete Player
   const handleDeletePlayer = async (id: string) => {
     const { error } = await supabase.from('players').delete().eq('id', id);
     if (!error) loadSquad();
   };
 
   if (loading) {
-    return <div className="bg-black text-white min-h-screen p-8 text-center font-bold">Loading Matchday Dashboard...</div>;
+    return <div className="bg-black text-white min-h-screen p-8 text-center font-bold">Loading Co-Gaffer...</div>;
   }
 
   return (
     <div className="bg-black text-white min-h-screen pb-20 p-4 font-sans select-none max-w-md mx-auto">
+      {/* BRANDING HEADER */}
+      <div className="flex justify-between items-center mb-3 px-1">
+        <h1 className="text-xl font-black text-lime-400 tracking-tight flex items-center gap-1.5">
+          <span>📋</span> CO-GAFFER
+        </h1>
+        <span className="text-[10px] bg-gray-900 border border-gray-800 text-lime-400 font-extrabold px-2 py-0.5 rounded tracking-wider uppercase">
+          ASSISTANT COACH
+        </span>
+      </div>
+
       {/* TAB 1: MATCHDAY TOUCHLINE */}
       {activeTab === 'matchday' && (
         <div>
@@ -224,7 +242,7 @@ export default function MatchdayApp() {
                 ))}
               </div>
 
-              {/* U7 Carousel Mini-Pitch Count Selector */}
+              {/* U7 Carousel Count Controls */}
               {ageGroup === 'U7' && (
                 <div className="p-3 bg-black rounded-lg border border-lime-500/30 mb-3">
                   <label className="block text-lime-400 font-bold mb-1">

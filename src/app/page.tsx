@@ -47,7 +47,7 @@ export default function MatchdayApp() {
   const [availablePlayerIds, setAvailablePlayerIds] = useState<string[]>([]);
   const [fixedGkId, setFixedGkId] = useState<string | null>(null);
   const [rotationIntervalMins, setRotationIntervalMins] = useState<number>(7);
-  const [subsPerBatch, setSubsPerBatch] = useState<number>(1); // NEW: Track how many subs to make at once
+  const [subsPerBatch, setSubsPerBatch] = useState<number>(1);
   const [generatedPlan, setGeneratedPlan] = useState<SubPlanStep[]>([]);
 
   // New Player Form State
@@ -97,7 +97,6 @@ export default function MatchdayApp() {
       setSquad(formatted);
       setAvailablePlayerIds(formatted.map((p) => p.id));
       
-      // Auto-detect default Goalkeeper if present
       const defaultGk = formatted.find((p) => p.preferred_position === 'Goalkeeper');
       if (defaultGk) setFixedGkId(defaultGk.id);
 
@@ -172,15 +171,7 @@ export default function MatchdayApp() {
     );
   };
 
-  // Rotation Engine with Fixed GK Support
-  const handleGenerateMatchPlan = () => {
-    const active = squad.filter((p) => availablePlayerIds.includes(p.id));
-    if (active.length <= pitchCapacity) return;
-
-    let gkPlayer: Player | undefined;
-    let outfieldPlayers = [...active];
-
-    // Rotation Engine with Fixed GK & Batch Sub Support
+  // Rotation Engine with Fixed GK & Batch Sub Support
   const handleGenerateMatchPlan = () => {
     const active = squad.filter((p) => availablePlayerIds.includes(p.id));
     if (active.length <= pitchCapacity) return;
@@ -215,7 +206,6 @@ export default function MatchdayApp() {
     let interval = rotationIntervalMins;
 
     while (interval < totalMatchMins) {
-      // Loop for as many subs as requested in 'subsPerBatch'
       for (let i = 0; i < subsPerBatch; i++) {
         if (currentBench.length === 0 || currentOutfieldPitch.length === 0) break;
 
@@ -460,44 +450,33 @@ export default function MatchdayApp() {
         </div>
       )}
 
-    {/* Sub Interval & Batch Size Setting Card */}
-          <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
-            <div className="grid grid-cols-2 gap-3">
-              {/* Rotation Frequency */}
-              <div>
-                <label className="block text-[11px] font-bold text-gray-300 mb-1.5 uppercase tracking-wider">
-                  Rotation Frequency
-                </label>
-                <select
-                  value={rotationIntervalMins}
-                  onChange={(e) => setRotationIntervalMins(parseInt(e.target.value, 10))}
-                  className="w-full bg-black border border-gray-800 rounded-lg p-2.5 text-white text-xs font-bold focus:outline-none focus:border-lime-400"
-                >
-                  <option value={5}>Every 5 mins</option>
-                  <option value={7}>Every 7 mins</option>
-                  <option value={10}>Every 10 mins</option>
-                  <option value={12}>Every 12 mins</option>
-                  <option value={15}>Every 15 mins</option>
-                </select>
-              </div>
+      {/* TAB 2: MATCHDAY PLANNER */}
+      {activeTab === 'planner' && (
+        <div>
+          <h1 className="text-xl font-black text-lime-400 mb-2">Matchday Scheduler</h1>
+          <p className="text-xs text-gray-400 mb-4">
+            Select available squad members and lock a fixed Goalkeeper to exclude them from outfield rotations.
+          </p>
 
-              {/* Subs per Batch */}
-              <div>
-                <label className="block text-[11px] font-bold text-gray-300 mb-1.5 uppercase tracking-wider">
-                  Subs per Batch
-                </label>
-                <select
-                  value={subsPerBatch}
-                  onChange={(e) => setSubsPerBatch(parseInt(e.target.value, 10))}
-                  className="w-full bg-black border border-gray-800 rounded-lg p-2.5 text-white text-xs font-bold focus:outline-none focus:border-lime-400"
-                >
-                  <option value={1}>1 Player at a time</option>
-                  <option value={2}>2 Players at once</option>
-                  <option value={3}>3 Players at once</option>
-                  <option value={4}>4 Players at once</option>
-                </select>
-              </div>
-            </div>
+          {/* Fixed Goalkeeper Selector */}
+          <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
+            <label className="block text-xs font-bold text-lime-400 mb-2 uppercase tracking-wider">
+              🧤 Fixed Full-Match Goalkeeper (Excludes from Sub Rotations)
+            </label>
+            <select
+              value={fixedGkId || ''}
+              onChange={(e) => setFixedGkId(e.target.value || null)}
+              className="w-full bg-black border border-gray-800 rounded-lg p-3 text-white text-xs font-bold focus:outline-none focus:border-lime-400"
+            >
+              <option value="">No Fixed GK (Rotate all players)</option>
+              {squad
+                .filter((p) => availablePlayerIds.includes(p.id))
+                .map((player) => (
+                  <option key={player.id} value={player.id}>
+                    #{player.squad_number} {player.name} ({player.preferred_position})
+                  </option>
+                ))}
+            </select>
           </div>
 
           {/* Availability Selection */}
@@ -530,21 +509,42 @@ export default function MatchdayApp() {
             </div>
           </div>
 
-          {/* Sub Interval Setting */}
+          {/* Sub Interval & Batch Size Setting Card */}
           <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
-            <label className="block text-xs font-bold text-gray-300 mb-2 uppercase tracking-wider">
-              Outfield Rotation Frequency
-            </label>
-            <select
-              value={rotationIntervalMins}
-              onChange={(e) => setRotationIntervalMins(parseInt(e.target.value, 10))}
-              className="w-full bg-black border border-gray-800 rounded-lg p-3 text-white text-xs font-bold focus:outline-none focus:border-lime-400"
-            >
-              <option value={5}>Every 5 minutes</option>
-              <option value={7}>Every 7 minutes (Recommended)</option>
-              <option value={10}>Every 10 minutes</option>
-              <option value={12}>Every 12 minutes</option>
-            </select>
+            <div className="grid grid-cols-2 gap-3">
+              <div>
+                <label className="block text-[11px] font-bold text-gray-300 mb-1.5 uppercase tracking-wider">
+                  Rotation Frequency
+                </label>
+                <select
+                  value={rotationIntervalMins}
+                  onChange={(e) => setRotationIntervalMins(parseInt(e.target.value, 10))}
+                  className="w-full bg-black border border-gray-800 rounded-lg p-2.5 text-white text-xs font-bold focus:outline-none focus:border-lime-400"
+                >
+                  <option value={5}>Every 5 mins</option>
+                  <option value={7}>Every 7 mins</option>
+                  <option value={10}>Every 10 mins</option>
+                  <option value={12}>Every 12 mins</option>
+                  <option value={15}>Every 15 mins</option>
+                </select>
+              </div>
+
+              <div>
+                <label className="block text-[11px] font-bold text-gray-300 mb-1.5 uppercase tracking-wider">
+                  Subs per Batch
+                </label>
+                <select
+                  value={subsPerBatch}
+                  onChange={(e) => setSubsPerBatch(parseInt(e.target.value, 10))}
+                  className="w-full bg-black border border-gray-800 rounded-lg p-2.5 text-white text-xs font-bold focus:outline-none focus:border-lime-400"
+                >
+                  <option value={1}>1 Player at a time</option>
+                  <option value={2}>2 Players at once</option>
+                  <option value={3}>3 Players at once</option>
+                  <option value={4}>4 Players at once</option>
+                </select>
+              </div>
+            </div>
           </div>
 
           <button

@@ -41,12 +41,7 @@ const FORMATION_OPTIONS: Record<number, { label: string; roles: string[] }[]> = 
   ]
 };
 
-const POSITION_SLOTS = [
-  'GK',
-  'L-DEF', 'C-DEF', 'R-DEF',
-  'L-MID', 'C-MID', 'R-MID',
-  'L-STR', 'C-STR', 'R-STR'
-];
+const POSITION_SLOTS = ['GK', 'L-DEF', 'C-DEF', 'R-DEF', 'L-MID', 'C-MID', 'R-MID', 'L-STR', 'C-STR', 'R-STR'];
 
 export default function MatchdayApp() {
   const [activeTab, setActiveTab] = useState<'matchday' | 'planner' | 'training' | 'squad' | 'stats'>('matchday');
@@ -58,7 +53,6 @@ export default function MatchdayApp() {
   const [loading, setLoading] = useState(true);
   const [savingMatch, setSavingMatch] = useState(false);
 
-  // Training & Format Settings
   const [sessionDate, setSessionDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [trainingData, setTrainingData] = useState<Record<string, TrainingRecord>>({});
   const [ageGroup, setAgeGroup] = useState<string>('U8-U9');
@@ -71,7 +65,6 @@ export default function MatchdayApp() {
   const [targetSubPosition, setTargetSubPosition] = useState<string | null>(null);
   const [isPowerplayActive, setIsPowerplayActive] = useState<boolean>(false);
 
-  // Planner Settings
   const [planOffPlayerId, setPlanOffPlayerId] = useState<string>('');
   const [planOnPlayerId, setPlanOnPlayerId] = useState<string>('');
   const [planMinute, setPlanMinute] = useState<number>(7);
@@ -83,7 +76,6 @@ export default function MatchdayApp() {
   const [subsPerBatch, setSubsPerBatch] = useState<number>(1);
   const [generatedPlan, setGeneratedPlan] = useState<SubPlanStep[]>([]);
 
-  // Match Events & Scoreboard
   const [goals, setGoals] = useState<MatchGoal[]>([]);
   const [playerOfTheMatch, setPlayerOfTheMatch] = useState<string | null>(null);
   const [opponentName, setOpponentName] = useState<string>('Opponent');
@@ -91,7 +83,6 @@ export default function MatchdayApp() {
   const [isClockRunning, setIsClockRunning] = useState<boolean>(false);
   const [matchHistory, setMatchHistory] = useState<SavedMatch[]>([]);
 
-  // Squad Editor
   const [newName, setNewName] = useState('');
   const [newNumber, setNewNumber] = useState('');
   const [newPosition, setNewPosition] = useState('Midfielder');
@@ -193,6 +184,134 @@ export default function MatchdayApp() {
     }
     return () => { if (interval) clearInterval(interval); };
   }, [isClockRunning, secondsRemaining]);
+
+  const togglePlayerAvailability = (id: string) => {
+    triggerHaptic();
+    setAvailablePlayerIds((prev) =>
+      prev.includes(id) ? prev.filter((pId) => pId !== id) : [...prev, id]
+    );
+  };
+
+  const toggleStarterSelection = (id: string) => {
+    triggerHaptic();
+    setStartingPlayerIds((prev) => {
+      if (prev.includes(id)) return prev.filter((pId) => pId !== id);
+      if (prev.length >= currentPitchCapacity) {
+        alert(`You can only select up to ${currentPitchCapacity} starters for this pitch capacity.`);
+        return prev;
+      }
+      return [...prev, id];
+    });
+  };
+
+  const autoSelectStarters = () => {
+    triggerHaptic();
+    const active = squad.filter((p) => availablePlayerIds.includes(p.id));
+    let selected: string[] = [];
+
+    if (fixedGkId && active.some((p) => p.id === fixedGkId)) {
+      selected.push(fixedGkId);
+    }
+
+    const remainingNeeded = currentPitchCapacity - selected.length;
+    const outfieldPool = active.filter((p) => !selected.includes(p.id));
+    selected = [...selected, ...outfieldPool.slice(0, remainingNeeded).map((p) => p.id)];
+    setStartingPlayerIds(selected);
+  };
+
+  const handleGenerateMatchPlan = () => {
+    triggerHaptic();
+    const active = squad.filter((p) => availablePlayerIds.includes(p.id));
+    if (active.length <= currentPitchCapacity) return;
+
+    let starters = active.filter((p) => startingPlayerIds.includes(p.id));
+    if (starters.length < currentPitchCapacity) {
+      const fillIn = active.filter((p) => !startingPlayerIds.includes(p.id));
+      starters = [...starters, ...fillIn.slice(0, currentPitchCapacity - starters.length)];
+    }
+
+    const bench = active.filter((p) => !starters.some((s) => s.id === p.id));
+    const activeForm = FORMATION_OPTIONS[basePitchCapacity]?.[formationIndex]?.roles || ['GK', 'L-DEF', 'R-DEF', 'C-MID', 'C-STR'];
+
+    const starterPitch = starters.map((p, idx) => ({
+      ...p,
+      isStarter: true,
+      current_position: activeForm[idx] || 'C-MID',
+    }));
+    const benchPlayers = bench.map((p) => ({ ...p, isStarter: false, current_position: 'SUB' }));
+
+    setPitchPlayers(starterPitch);
+    setSubBench(benchPlayers);
+
+    const plan: SubPlanStep[] = [];
+    const totalMatchMins = halfMinutes * 2;
+
+    let currentOutfieldPitch = [...starterPitch.filter((p) => p.id !== fixedGkId)];
+    let currentBench = [...benchPlayers];
+    let interval = rotationIntervalMins;
+
+    while (interval < totalMatchMins) {
+      for (let i = 0; i < subsPerBatch; i++) {
+        if (currentBench.length === 0 || currentOutfieldPitch.length === 0) break;
+
+        const incoming = currentBench.shift();
+        const outgoing = currentOutfieldPitch.shift();
+
+        if (incoming && outgoing) {
+          plan.push({
+            id: Math.random().toString(),
+            minute: interval,
+            offPlayerId: outgoing.id,
+            offPlayerName: `#${outgoing.squad_number} ${outgoing.name}`,
+            onPlayerId: incoming.id,
+            onPlayerName: `#${incoming.squad_number} ${incoming.name}`,
+            assignedPosition: outgoing.current_position,
+            status: 'pending',
+          });
+
+          currentOutfieldPitch.push({ ...incoming, current_position: outgoing.current_position });
+          currentBench.push({ ...outgoing, current_position: 'SUB' });
+        }
+      }
+      interval += rotationIntervalMins;
+    }
+
+    setGeneratedPlan(plan);
+    setActiveTab('matchday');
+  };
+
+  const getProjectedMinutes = () => {
+    const active = squad.filter((p) => availablePlayerIds.includes(p.id));
+    if (active.length === 0) return [];
+
+    const totalMatchMins = halfMinutes * 2;
+    const minutesMap: Record<string, number> = {};
+
+    active.forEach((p) => { minutesMap[p.id] = 0; });
+
+    let currentPitch = active.slice(0, currentPitchCapacity);
+    let currentBench = active.slice(currentPitchCapacity);
+
+    for (let m = 1; m <= totalMatchMins; m++) {
+      currentPitch.forEach((p) => { minutesMap[p.id] = (minutesMap[p.id] || 0) + 1; });
+      if (m % rotationIntervalMins === 0 && m < totalMatchMins) {
+        for (let i = 0; i < subsPerBatch; i++) {
+          if (currentBench.length === 0 || currentPitch.length === 0) break;
+          const inc = currentBench.shift();
+          const out = currentPitch.shift();
+          if (inc && out) {
+            currentPitch.push(inc);
+            currentBench.push(out);
+          }
+        }
+      }
+    }
+
+    return active.map((p) => ({
+      ...p,
+      projectedMins: minutesMap[p.id] || 0,
+    }));
+  };
 
   const handleChangeOnPitchPosition = (playerId: string, newRole: string) => {
     triggerHaptic();
@@ -376,6 +495,8 @@ export default function MatchdayApp() {
     const onP = squad.find((p) => p.id === planOnPlayerId);
     if (!offP || !onP) return;
 
+    triggerHaptic();
+
     const newStep: SubPlanStep = {
       id: Math.random().toString(),
       minute: planMinute,
@@ -387,47 +508,7 @@ export default function MatchdayApp() {
       status: 'pending',
     };
 
-    triggerHaptic();
     setGeneratedPlan((prev) => [...prev, newStep].sort((a, b) => a.minute - b.minute));
-  };
-
-  const togglePlayerAvailability = (playerId: string) => {
-    triggerHaptic();
-    setAvailablePlayerIds((prev) => {
-      const isAvailable = prev.includes(playerId);
-      const nextAvailable = isAvailable
-        ? prev.filter((id) => id !== playerId)
-        : [...prev, playerId];
-
-      setStartingPlayerIds((prevStarters) => prevStarters.filter((id) => id !== playerId));
-      return nextAvailable;
-    });
-  };
-
-  const toggleStarterSelection = (playerId: string) => {
-    triggerHaptic();
-    setStartingPlayerIds((prev) =>
-      prev.includes(playerId)
-        ? prev.filter((id) => id !== playerId)
-        : [...prev, playerId]
-    );
-  };
-
-  const autoSelectStarters = () => {
-    triggerHaptic();
-    const availableSquad = squad.filter((player) => availablePlayerIds.includes(player.id));
-    const preferredGk = fixedGkId
-      ? availableSquad.find((player) => player.id === fixedGkId)
-      : availableSquad.find((player) => player.preferred_position === 'Goalkeeper');
-
-    const starters: string[] = preferredGk ? [preferredGk.id] : [];
-    const remainingSlots = Math.max(0, currentPitchCapacity - starters.length);
-    const outfield = availableSquad
-      .filter((player) => player.id !== preferredGk?.id)
-      .slice(0, remainingSlots)
-      .map((player) => player.id);
-
-    setStartingPlayerIds([...starters, ...outfield]);
   };
 
   const handleAddPlayer = async (e: React.FormEvent) => {
@@ -450,11 +531,11 @@ export default function MatchdayApp() {
   if (loading) return <div className="bg-black text-white min-h-screen p-8 text-center font-bold">Loading Co-Gaffer...</div>;
 
   return (
-    <div className="bg-black text-white min-h-screen pb-24 p-4 font-sans max-w-md mx-auto">
+    <div className="bg-black text-white min-h-screen pb-24 p-4 font-sans max-w-md mx-auto select-none">
       <div className="flex justify-between items-center mb-4 px-1">
         <h1 className="text-2xl font-black text-lime-400 flex items-center gap-2"><span>📋</span> CO-GAFFER</h1>
         <span className="text-[10px] bg-gray-900 border border-gray-800 text-lime-400 font-extrabold px-2.5 py-1 rounded-md">
-          RECONNECTED
+          PLANNER RESTORED
         </span>
       </div>
 
@@ -533,22 +614,18 @@ export default function MatchdayApp() {
           generatedPlan={generatedPlan}
           handleRemoveSubStep={(id) => setGeneratedPlan((prev) => prev.filter((s) => s.id !== id))}
           availablePlayerIds={availablePlayerIds}
-          getProjectedMinutes={() => squad.map((p) => ({ ...p, projectedMins: 20 }))}
-          handleGenerateMatchPlan={() => setActiveTab('matchday')} togglePlayerAvailability={function (id: string): void {
-            throw new Error('Function not implemented.');
-          } } startingPlayerIds={[]} toggleStarterSelection={function (id: string): void {
-            throw new Error('Function not implemented.');
-          } } autoSelectStarters={function (): void {
-            throw new Error('Function not implemented.');
-          } } fixedGkId={null} setFixedGkId={function (id: string | null): void {
-            throw new Error('Function not implemented.');
-          } } rotationIntervalMins={0} setRotationIntervalMins={function (mins: number): void {
-            throw new Error('Function not implemented.');
-          } } subsPerBatch={0} setSubsPerBatch={function (batch: number): void {
-            throw new Error('Function not implemented.');
-          } } basePitchCapacity={0} currentPitchCapacity={0} triggerHaptic={function (): void {
-            throw new Error('Function not implemented.');
-          } }        />
+          togglePlayerAvailability={togglePlayerAvailability}
+          startingPlayerIds={startingPlayerIds}
+          toggleStarterSelection={toggleStarterSelection}
+          autoSelectStarters={autoSelectStarters}
+          rotationIntervalMins={rotationIntervalMins}
+          setRotationIntervalMins={setRotationIntervalMins}
+          subsPerBatch={subsPerBatch}
+          setSubsPerBatch={setSubsPerBatch}
+          getProjectedMinutes={getProjectedMinutes}
+          handleGenerateMatchPlan={handleGenerateMatchPlan}
+          currentPitchCapacity={currentPitchCapacity}
+        />
       )}
 
       {activeTab === 'training' && (
@@ -598,12 +675,12 @@ export default function MatchdayApp() {
       )}
 
       {/* BOTTOM NAV */}
-      <div className="fixed bottom-0 left-0 right-0 bg-gray-950/95 border-t border-gray-800 p-2 flex justify-around max-w-md mx-auto z-50">
-        <button onClick={() => setActiveTab('matchday')} className={`flex-1 py-3 font-black text-xs rounded-xl ${activeTab === 'matchday' ? 'bg-lime-500 text-black' : 'text-gray-400'}`}>⚽ MATCH</button>
-        <button onClick={() => setActiveTab('training')} className={`flex-1 py-3 font-black text-xs rounded-xl ${activeTab === 'training' ? 'bg-lime-500 text-black' : 'text-gray-400'}`}>🏋️ DRILLS</button>
-        <button onClick={() => setActiveTab('planner')} className={`flex-1 py-3 font-black text-xs rounded-xl ${activeTab === 'planner' ? 'bg-lime-500 text-black' : 'text-gray-400'}`}>📅 PLANNER</button>
-        <button onClick={() => setActiveTab('squad')} className={`flex-1 py-3 font-black text-xs rounded-xl ${activeTab === 'squad' ? 'bg-lime-500 text-black' : 'text-gray-400'}`}>📋 TEAM</button>
-        <button onClick={() => setActiveTab('stats')} className={`flex-1 py-3 font-black text-xs rounded-xl ${activeTab === 'stats' ? 'bg-lime-500 text-black' : 'text-gray-400'}`}>📊 AUDIT</button>
+      <div className="fixed bottom-0 left-0 right-0 bg-gray-950/95 border-t border-gray-800 p-2 flex justify-around max-w-md mx-auto z-50 backdrop-blur-md">
+        <button type="button" onClick={() => setActiveTab('matchday')} className={`flex-1 py-3 font-black text-xs rounded-xl ${activeTab === 'matchday' ? 'bg-lime-500 text-black' : 'text-gray-400'}`}>⚽ MATCH</button>
+        <button type="button" onClick={() => setActiveTab('training')} className={`flex-1 py-3 font-black text-xs rounded-xl ${activeTab === 'training' ? 'bg-lime-500 text-black' : 'text-gray-400'}`}>🏋️ DRILLS</button>
+        <button type="button" onClick={() => setActiveTab('planner')} className={`flex-1 py-3 font-black text-xs rounded-xl ${activeTab === 'planner' ? 'bg-lime-500 text-black' : 'text-gray-400'}`}>📅 PLANNER</button>
+        <button type="button" onClick={() => setActiveTab('squad')} className={`flex-1 py-3 font-black text-xs rounded-xl ${activeTab === 'squad' ? 'bg-lime-500 text-black' : 'text-gray-400'}`}>📋 TEAM</button>
+        <button type="button" onClick={() => setActiveTab('stats')} className={`flex-1 py-3 font-black text-xs rounded-xl ${activeTab === 'stats' ? 'bg-lime-500 text-black' : 'text-gray-400'}`}>📊 AUDIT</button>
       </div>
     </div>
   );

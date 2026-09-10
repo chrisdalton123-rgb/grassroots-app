@@ -24,40 +24,37 @@ type Props = {
   startingPlayerIds: string[];
   toggleStarterSelection: (id: string) => void;
   autoSelectStarters: () => void;
-  fixedGkId: string | null;
-  setFixedGkId: (id: string | null) => void;
   rotationIntervalMins: number;
   setRotationIntervalMins: (mins: number) => void;
   subsPerBatch: number;
   setSubsPerBatch: (batch: number) => void;
   getProjectedMinutes: () => (Player & { projectedMins: number })[];
   handleGenerateMatchPlan: () => void;
-  basePitchCapacity: number;
   currentPitchCapacity: number;
-  triggerHaptic: () => void;
 };
 
 export default function PlannerTab(props: Props) {
   const activeSquad = props.squad.filter((p) => props.availablePlayerIds.includes(p.id));
 
   return (
-    <div>
-      <h1 className="text-xl font-black text-lime-400 mb-3">Pre-Match Strategy Planner</h1>
+    <div className="flex flex-col gap-4">
+      <h1 className="text-xl font-black text-lime-400">Pre-Match Strategy Planner</h1>
 
-      {/* MATCH DURATION & PITCH CAPACITY */}
-      <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 mb-4 shadow-md">
+      {/* MATCH DURATION & ROTATION INTERVAL */}
+      <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md">
         <label className="block text-xs font-bold text-lime-400 mb-2 uppercase tracking-wider">
-          ⏱️ Match Half Duration ({props.halfMinutes}m per half = {props.halfMinutes * 2}m total)
+          ⏱️ Half Duration ({props.halfMinutes}m halves = {props.halfMinutes * 2}m total)
         </label>
         <div className="flex gap-2 mb-3">
           {[20, 25, 30, 35].map((mins) => (
             <button
               key={mins}
+              type="button"
               onClick={() => props.handleHalfMinutesChange(mins)}
               className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all min-h-[44px] ${
                 props.halfMinutes === mins
                   ? 'bg-lime-500 text-black border-lime-400'
-                  : 'bg-black border-gray-800 text-gray-400 hover:border-gray-700'
+                  : 'bg-black border-gray-800 text-gray-400'
               }`}
             >
               {mins}m
@@ -66,7 +63,7 @@ export default function PlannerTab(props: Props) {
         </div>
 
         <div className="pt-3 border-t border-gray-800 flex justify-between items-center text-xs">
-          <span className="text-gray-300 font-bold">Rotation Interval:</span>
+          <span className="text-gray-300 font-bold">Rotation Every:</span>
           <div className="flex items-center gap-2">
             <input
               type="number"
@@ -79,17 +76,18 @@ export default function PlannerTab(props: Props) {
         </div>
       </div>
 
-      {/* MATCHDAY AVAILABILITY & STARTERS SELECTOR */}
-      <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 mb-4 shadow-md">
+      {/* AVAILABILITY & STARTER SELECTION */}
+      <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold">
-            👥 Squad Attendance & Starters ({props.startingPlayerIds.length}/{props.currentPitchCapacity})
+            👥 Starters ({props.startingPlayerIds.length}/{props.currentPitchCapacity})
           </h2>
           <button
+            type="button"
             onClick={props.autoSelectStarters}
             className="text-[10px] bg-lime-500/20 text-lime-400 border border-lime-500/40 px-2.5 py-1 rounded-lg font-bold"
           >
-            ⚡ AUTO STARTERS
+            ⚡ AUTO SELECT
           </button>
         </div>
 
@@ -102,6 +100,7 @@ export default function PlannerTab(props: Props) {
               <div key={player.id} className="p-2.5 bg-black rounded-xl border border-gray-800 flex justify-between items-center text-xs">
                 <div className="flex items-center gap-2">
                   <button
+                    type="button"
                     onClick={() => props.togglePlayerAvailability(player.id)}
                     className={`w-6 h-6 rounded-lg text-xs font-black flex items-center justify-center ${
                       isAvailable ? 'bg-emerald-500 text-black' : 'bg-gray-800 text-gray-500'
@@ -116,11 +115,10 @@ export default function PlannerTab(props: Props) {
 
                 {isAvailable && (
                   <button
+                    type="button"
                     onClick={() => props.toggleStarterSelection(player.id)}
                     className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all ${
-                      isStarter
-                        ? 'bg-lime-500 text-black'
-                        : 'bg-gray-900 text-gray-400 border border-gray-800'
+                      isStarter ? 'bg-lime-500 text-black' : 'bg-gray-900 text-gray-400 border border-gray-800'
                     }`}
                   >
                     {isStarter ? '🚨 STARTER' : 'SUB BENCH'}
@@ -132,10 +130,10 @@ export default function PlannerTab(props: Props) {
         </div>
       </div>
 
-      {/* MANUAL SUB STEP BUILDER */}
-      <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 mb-4 shadow-md">
+      {/* MANUAL SINGLE SUB STEP ENTRY */}
+      <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md">
         <h2 className="text-xs font-black text-lime-400 uppercase tracking-wider mb-2">
-          ➕ Add Custom Scheduled Sub
+          ➕ Add Manual Scheduled Sub
         </h2>
         <div className="flex flex-col gap-2.5">
           <div className="flex gap-2">
@@ -177,11 +175,12 @@ export default function PlannerTab(props: Props) {
               className="bg-black border border-gray-800 text-xs font-bold text-white p-2.5 rounded-xl flex-1"
             >
               {props.positionSlots.map((pos) => (
-                <option key={pos} value={pos}>Target Position: {pos}</option>
+                <option key={pos} value={pos}>Target Pos: {pos}</option>
               ))}
             </select>
 
             <button
+              type="button"
               onClick={props.handleAddCustomSubStep}
               className="bg-lime-500 text-black font-black px-4 py-2.5 rounded-xl text-xs"
             >
@@ -191,10 +190,10 @@ export default function PlannerTab(props: Props) {
         </div>
       </div>
 
-      {/* SCHEDULE PREVIEW */}
-      <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 mb-4 shadow-md">
-        <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold mb-3 flex justify-between">
-          <span>📋 Scheduled Sub Steps ({props.generatedPlan.length})</span>
+      {/* SCHEDULED SUB STEPS PREVIEW */}
+      <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md">
+        <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold mb-3">
+          📋 Planned Substitutions ({props.generatedPlan.length})
         </h2>
 
         <div className="flex flex-col gap-2">
@@ -207,6 +206,7 @@ export default function PlannerTab(props: Props) {
                 <span className="text-gray-400">({step.assignedPosition})</span>
               </div>
               <button
+                type="button"
                 onClick={() => props.handleRemoveSubStep(step.id)}
                 className="text-red-500 font-bold text-xs px-2 py-1"
               >
@@ -219,17 +219,14 @@ export default function PlannerTab(props: Props) {
 
       {/* PROJECTED MINUTES BREAKDOWN */}
       {props.availablePlayerIds.length > 0 && (
-        <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 mb-4 shadow-md">
+        <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md">
           <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold mb-3 flex justify-between">
-            <span>📊 Projected Playing Time Breakdown</span>
-            <span>{props.halfMinutes * 2}m Total Match</span>
+            <span>📊 Projected Playing Time</span>
+            <span>{props.halfMinutes * 2}m Match</span>
           </h2>
           <div className="grid grid-cols-2 gap-2">
             {props.getProjectedMinutes().map((player) => (
-              <div
-                key={player.id}
-                className="p-3 bg-black rounded-xl border border-gray-800 flex justify-between items-center text-xs"
-              >
+              <div key={player.id} className="p-3 bg-black rounded-xl border border-gray-800 flex justify-between items-center text-xs">
                 <span className="font-bold text-gray-300 truncate max-w-[100px]">
                   #{player.squad_number} {player.name}
                 </span>
@@ -243,10 +240,11 @@ export default function PlannerTab(props: Props) {
       )}
 
       <button
+        type="button"
         onClick={props.handleGenerateMatchPlan}
         className="w-full bg-lime-500 text-black font-black p-4 rounded-2xl text-sm active:scale-95 transition-all shadow-lg min-h-[48px]"
       >
-        ⚡ AUTO-GENERATE BALANCED FULL MATCH PLAN
+        ⚡ AUTO-GENERATE MATCH PLAN
       </button>
     </div>
   );

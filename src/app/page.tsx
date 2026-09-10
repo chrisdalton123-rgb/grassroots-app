@@ -391,6 +391,45 @@ export default function MatchdayApp() {
     setGeneratedPlan((prev) => [...prev, newStep].sort((a, b) => a.minute - b.minute));
   };
 
+  const togglePlayerAvailability = (playerId: string) => {
+    triggerHaptic();
+    setAvailablePlayerIds((prev) => {
+      const isAvailable = prev.includes(playerId);
+      const nextAvailable = isAvailable
+        ? prev.filter((id) => id !== playerId)
+        : [...prev, playerId];
+
+      setStartingPlayerIds((prevStarters) => prevStarters.filter((id) => id !== playerId));
+      return nextAvailable;
+    });
+  };
+
+  const toggleStarterSelection = (playerId: string) => {
+    triggerHaptic();
+    setStartingPlayerIds((prev) =>
+      prev.includes(playerId)
+        ? prev.filter((id) => id !== playerId)
+        : [...prev, playerId]
+    );
+  };
+
+  const autoSelectStarters = () => {
+    triggerHaptic();
+    const availableSquad = squad.filter((player) => availablePlayerIds.includes(player.id));
+    const preferredGk = fixedGkId
+      ? availableSquad.find((player) => player.id === fixedGkId)
+      : availableSquad.find((player) => player.preferred_position === 'Goalkeeper');
+
+    const starters: string[] = preferredGk ? [preferredGk.id] : [];
+    const remainingSlots = Math.max(0, currentPitchCapacity - starters.length);
+    const outfield = availableSquad
+      .filter((player) => player.id !== preferredGk?.id)
+      .slice(0, remainingSlots)
+      .map((player) => player.id);
+
+    setStartingPlayerIds([...starters, ...outfield]);
+  };
+
   const handleAddPlayer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName || !newNumber) return;
@@ -495,8 +534,21 @@ export default function MatchdayApp() {
           handleRemoveSubStep={(id) => setGeneratedPlan((prev) => prev.filter((s) => s.id !== id))}
           availablePlayerIds={availablePlayerIds}
           getProjectedMinutes={() => squad.map((p) => ({ ...p, projectedMins: 20 }))}
-          handleGenerateMatchPlan={() => setActiveTab('matchday')}
-        />
+          handleGenerateMatchPlan={() => setActiveTab('matchday')} togglePlayerAvailability={function (id: string): void {
+            throw new Error('Function not implemented.');
+          } } startingPlayerIds={[]} toggleStarterSelection={function (id: string): void {
+            throw new Error('Function not implemented.');
+          } } autoSelectStarters={function (): void {
+            throw new Error('Function not implemented.');
+          } } fixedGkId={null} setFixedGkId={function (id: string | null): void {
+            throw new Error('Function not implemented.');
+          } } rotationIntervalMins={0} setRotationIntervalMins={function (mins: number): void {
+            throw new Error('Function not implemented.');
+          } } subsPerBatch={0} setSubsPerBatch={function (batch: number): void {
+            throw new Error('Function not implemented.');
+          } } basePitchCapacity={0} currentPitchCapacity={0} triggerHaptic={function (): void {
+            throw new Error('Function not implemented.');
+          } }        />
       )}
 
       {activeTab === 'training' && (

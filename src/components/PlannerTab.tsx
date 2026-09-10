@@ -20,16 +20,31 @@ type Props = {
   generatedPlan: SubPlanStep[];
   handleRemoveSubStep: (id: string) => void;
   availablePlayerIds: string[];
+  togglePlayerAvailability: (id: string) => void;
+  startingPlayerIds: string[];
+  toggleStarterSelection: (id: string) => void;
+  autoSelectStarters: () => void;
+  fixedGkId: string | null;
+  setFixedGkId: (id: string | null) => void;
+  rotationIntervalMins: number;
+  setRotationIntervalMins: (mins: number) => void;
+  subsPerBatch: number;
+  setSubsPerBatch: (batch: number) => void;
   getProjectedMinutes: () => (Player & { projectedMins: number })[];
   handleGenerateMatchPlan: () => void;
+  basePitchCapacity: number;
+  currentPitchCapacity: number;
+  triggerHaptic: () => void;
 };
 
 export default function PlannerTab(props: Props) {
+  const activeSquad = props.squad.filter((p) => props.availablePlayerIds.includes(p.id));
+
   return (
     <div>
       <h1 className="text-xl font-black text-lime-400 mb-3">Pre-Match Strategy Planner</h1>
 
-      {/* DURATION SETTINGS */}
+      {/* MATCH DURATION & PITCH CAPACITY */}
       <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 mb-4 shadow-md">
         <label className="block text-xs font-bold text-lime-400 mb-2 uppercase tracking-wider">
           ⏱️ Match Half Duration ({props.halfMinutes}m per half = {props.halfMinutes * 2}m total)
@@ -49,12 +64,78 @@ export default function PlannerTab(props: Props) {
             </button>
           ))}
         </div>
+
+        <div className="pt-3 border-t border-gray-800 flex justify-between items-center text-xs">
+          <span className="text-gray-300 font-bold">Rotation Interval:</span>
+          <div className="flex items-center gap-2">
+            <input
+              type="number"
+              value={props.rotationIntervalMins}
+              onChange={(e) => props.setRotationIntervalMins(Math.max(1, parseInt(e.target.value, 10) || 5))}
+              className="bg-black border border-gray-800 text-lime-400 font-bold p-1.5 w-16 text-center rounded-lg"
+            />
+            <span className="text-gray-400 font-bold">mins</span>
+          </div>
+        </div>
+      </div>
+
+      {/* MATCHDAY AVAILABILITY & STARTERS SELECTOR */}
+      <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 mb-4 shadow-md">
+        <div className="flex justify-between items-center mb-3">
+          <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold">
+            👥 Squad Attendance & Starters ({props.startingPlayerIds.length}/{props.currentPitchCapacity})
+          </h2>
+          <button
+            onClick={props.autoSelectStarters}
+            className="text-[10px] bg-lime-500/20 text-lime-400 border border-lime-500/40 px-2.5 py-1 rounded-lg font-bold"
+          >
+            ⚡ AUTO STARTERS
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-2">
+          {props.squad.map((player) => {
+            const isAvailable = props.availablePlayerIds.includes(player.id);
+            const isStarter = props.startingPlayerIds.includes(player.id);
+
+            return (
+              <div key={player.id} className="p-2.5 bg-black rounded-xl border border-gray-800 flex justify-between items-center text-xs">
+                <div className="flex items-center gap-2">
+                  <button
+                    onClick={() => props.togglePlayerAvailability(player.id)}
+                    className={`w-6 h-6 rounded-lg text-xs font-black flex items-center justify-center ${
+                      isAvailable ? 'bg-emerald-500 text-black' : 'bg-gray-800 text-gray-500'
+                    }`}
+                  >
+                    {isAvailable ? '✓' : '✕'}
+                  </button>
+                  <span className={`font-extrabold ${isAvailable ? 'text-white' : 'text-gray-600 line-through'}`}>
+                    #{player.squad_number} {player.name}
+                  </span>
+                </div>
+
+                {isAvailable && (
+                  <button
+                    onClick={() => props.toggleStarterSelection(player.id)}
+                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all ${
+                      isStarter
+                        ? 'bg-lime-500 text-black'
+                        : 'bg-gray-900 text-gray-400 border border-gray-800'
+                    }`}
+                  >
+                    {isStarter ? '🚨 STARTER' : 'SUB BENCH'}
+                  </button>
+                )}
+              </div>
+            );
+          })}
+        </div>
       </div>
 
       {/* MANUAL SUB STEP BUILDER */}
       <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 mb-4 shadow-md">
         <h2 className="text-xs font-black text-lime-400 uppercase tracking-wider mb-2">
-          ➕ Add Single Sub to Schedule
+          ➕ Add Custom Scheduled Sub
         </h2>
         <div className="flex flex-col gap-2.5">
           <div className="flex gap-2">
@@ -64,7 +145,7 @@ export default function PlannerTab(props: Props) {
               className="bg-black border border-gray-800 text-xs font-bold text-white p-2.5 rounded-xl flex-1"
             >
               <option value="">Select OFF Player</option>
-              {props.squad.map((p) => (
+              {activeSquad.map((p) => (
                 <option key={p.id} value={p.id}>#{p.squad_number} {p.name}</option>
               ))}
             </select>
@@ -75,7 +156,7 @@ export default function PlannerTab(props: Props) {
               className="bg-black border border-gray-800 text-xs font-bold text-lime-400 p-2.5 rounded-xl flex-1"
             >
               <option value="">Select ON Player</option>
-              {props.squad.map((p) => (
+              {activeSquad.map((p) => (
                 <option key={p.id} value={p.id}>#{p.squad_number} {p.name}</option>
               ))}
             </select>

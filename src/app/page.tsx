@@ -1930,7 +1930,7 @@ export default function MatchdayApp() {
             activeTab === 'training' ? 'bg-lime-500 text-black' : 'text-gray-400'
           }`}
         >
-          🏋️ DRILLS
+          🏋️ TRAINING
         </button>
         <button
           onClick={() => setActiveTab('planner')}

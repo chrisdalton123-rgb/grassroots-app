@@ -9,7 +9,7 @@ import TrainingTab from '@/components/TrainingTab';
 import SquadTab from '@/components/SquadTab';
 import AuditTab from '@/components/AuditTab';
 
-const AGE_PRESETS = {
+const AGE_PRESETS: Record<string, { pitchCount: number; halfMins: number; label: string }> = {
   'U7': { pitchCount: 3, halfMins: 10, label: 'U7 (3v3 Carousel Festival)' },
   'U8-U9': { pitchCount: 5, halfMins: 20, label: 'U8/U9 (5v5 — 20m Halves)' },
   'U10-U11': { pitchCount: 7, halfMins: 25, label: 'U10/U11 (7v7 — 25m Halves)' },
@@ -18,7 +18,35 @@ const AGE_PRESETS = {
   'TOURNAMENT': { pitchCount: 6, halfMins: 10, label: 'Summer 6s (6v6 — 10m Games)' },
 };
 
-const POSITION_SLOTS = ['GK', 'L-DEF', 'C-DEF', 'R-DEF', 'L-MID', 'C-MID', 'R-MID', 'L-STR', 'C-STR', 'R-STR'];
+const FORMATION_OPTIONS: Record<number, { label: string; roles: string[] }[]> = {
+  5: [
+    { label: '2-1-1 (Solid Base)', roles: ['GK', 'L-DEF', 'R-DEF', 'C-MID', 'C-STR'] },
+    { label: '1-2-1 (Diamond)', roles: ['GK', 'C-DEF', 'L-MID', 'R-MID', 'C-STR'] },
+  ],
+  6: [
+    { label: '2-2-1 (Balanced 6s)', roles: ['GK', 'L-DEF', 'R-DEF', 'L-MID', 'R-MID', 'C-STR'] },
+    { label: '1-3-1 (Midfield Overload)', roles: ['GK', 'C-DEF', 'L-MID', 'C-MID', 'R-MID', 'C-STR'] },
+  ],
+  7: [
+    { label: '2-3-1 (Standard 7v7)', roles: ['GK', 'L-DEF', 'R-DEF', 'L-MID', 'C-MID', 'R-MID', 'C-STR'] },
+    { label: '3-2-1 (Tree)', roles: ['GK', 'L-DEF', 'C-DEF', 'R-DEF', 'L-MID', 'R-MID', 'C-STR'] },
+  ],
+  9: [
+    { label: '3-3-2 (Standard 9v9)', roles: ['GK', 'L-DEF', 'C-DEF', 'R-DEF', 'L-MID', 'C-MID', 'R-MID', 'L-STR', 'R-STR'] },
+    { label: '3-4-1 (Midfield Heavy)', roles: ['GK', 'L-DEF', 'C-DEF', 'R-DEF', 'L-MID', 'C-MID', 'C-MID', 'R-MID', 'C-STR'] },
+  ],
+  11: [
+    { label: '4-3-3 (Attacking)', roles: ['GK', 'L-DEF', 'C-DEF', 'C-DEF', 'R-DEF', 'L-MID', 'C-MID', 'R-MID', 'L-STR', 'C-STR', 'R-STR'] },
+    { label: '4-4-2 (Classic)', roles: ['GK', 'L-DEF', 'C-DEF', 'C-DEF', 'R-DEF', 'L-MID', 'C-MID', 'C-MID', 'R-MID', 'L-STR', 'R-STR'] },
+  ]
+};
+
+const POSITION_SLOTS = [
+  'GK',
+  'L-DEF', 'C-DEF', 'R-DEF',
+  'L-MID', 'C-MID', 'R-MID',
+  'L-STR', 'C-STR', 'R-STR'
+];
 
 export default function MatchdayApp() {
   const [activeTab, setActiveTab] = useState<'matchday' | 'planner' | 'training' | 'squad' | 'stats'>('matchday');
@@ -30,33 +58,37 @@ export default function MatchdayApp() {
   const [loading, setLoading] = useState(true);
   const [savingMatch, setSavingMatch] = useState(false);
 
-  // Training & Match States
+  // Training & Format Settings
   const [sessionDate, setSessionDate] = useState<string>(new Date().toISOString().split('T')[0]);
   const [trainingData, setTrainingData] = useState<Record<string, TrainingRecord>>({});
-  const [ageGroup, setAgeGroup] = useState('U8-U9');
-  const [basePitchCapacity, setBasePitchCapacity] = useState(5);
-  const [halfMinutes, setHalfMinutes] = useState(20);
-  const [showSettings, setShowSettings] = useState(false);
+  const [ageGroup, setAgeGroup] = useState<string>('U8-U9');
+  const [basePitchCapacity, setBasePitchCapacity] = useState<number>(5);
+  const [halfMinutes, setHalfMinutes] = useState<number>(20);
+  const [showSettings, setShowSettings] = useState<boolean>(false);
   const [viewMode, setViewMode] = useState<'pitch' | 'cards'>('pitch');
+  const [formationIndex, setFormationIndex] = useState<number>(0);
   const [editingPositionPlayerId, setEditingPositionPlayerId] = useState<string | null>(null);
   const [targetSubPosition, setTargetSubPosition] = useState<string | null>(null);
-  const [isPowerplayActive, setIsPowerplayActive] = useState(false);
+  const [isPowerplayActive, setIsPowerplayActive] = useState<boolean>(false);
 
-  // Planner States
-  const [planOffPlayerId, setPlanOffPlayerId] = useState('');
-  const [planOnPlayerId, setPlanOnPlayerId] = useState('');
-  const [planMinute, setPlanMinute] = useState(7);
-  const [planTargetPos, setPlanTargetPos] = useState('C-MID');
+  // Planner Settings
+  const [planOffPlayerId, setPlanOffPlayerId] = useState<string>('');
+  const [planOnPlayerId, setPlanOnPlayerId] = useState<string>('');
+  const [planMinute, setPlanMinute] = useState<number>(7);
+  const [planTargetPos, setPlanTargetPos] = useState<string>('C-MID');
   const [availablePlayerIds, setAvailablePlayerIds] = useState<string[]>([]);
   const [startingPlayerIds, setStartingPlayerIds] = useState<string[]>([]);
+  const [fixedGkId, setFixedGkId] = useState<string | null>(null);
+  const [rotationIntervalMins, setRotationIntervalMins] = useState<number>(7);
+  const [subsPerBatch, setSubsPerBatch] = useState<number>(1);
   const [generatedPlan, setGeneratedPlan] = useState<SubPlanStep[]>([]);
 
-  // Scoreboard & Timer
+  // Match Events & Scoreboard
   const [goals, setGoals] = useState<MatchGoal[]>([]);
   const [playerOfTheMatch, setPlayerOfTheMatch] = useState<string | null>(null);
-  const [opponentName, setOpponentName] = useState('Opponent');
-  const [secondsRemaining, setSecondsRemaining] = useState(20 * 60);
-  const [isClockRunning, setIsClockRunning] = useState(false);
+  const [opponentName, setOpponentName] = useState<string>('Opponent');
+  const [secondsRemaining, setSecondsRemaining] = useState<number>(20 * 60);
+  const [isClockRunning, setIsClockRunning] = useState<boolean>(false);
   const [matchHistory, setMatchHistory] = useState<SavedMatch[]>([]);
 
   // Squad Editor
@@ -89,6 +121,7 @@ export default function MatchdayApp() {
   const squadMaxSeconds = Math.max(...squad.map((p) => p.total_seconds_played || 0), 1);
   const lowestSeconds = pitchPlayers.length + subBench.length > 0 ? Math.min(...[...pitchPlayers, ...subBench].map((p) => p.seconds_played)) : 0;
   const attendedCount = squad.filter((p) => trainingData[p.id]?.status === 'attended').length;
+  const activeFormations = FORMATION_OPTIONS[basePitchCapacity] || [{ label: 'Standard Formation', roles: Array(basePitchCapacity).fill('C-MID') }];
 
   const loadSquad = async () => {
     setLoading(true);
@@ -99,6 +132,8 @@ export default function MatchdayApp() {
     if (matchesData) setMatchHistory(matchesData);
 
     if (playersData) {
+      const activeForm = FORMATION_OPTIONS[basePitchCapacity]?.[0]?.roles || ['GK', 'L-DEF', 'R-DEF', 'C-MID', 'C-STR'];
+
       const formatted: Player[] = playersData.map((p) => {
         const pStats = statsData?.filter((s) => s.player_id === p.id) || [];
         return {
@@ -107,7 +142,10 @@ export default function MatchdayApp() {
           squad_number: p.squad_number,
           preferred_position: p.preferred_position,
           seconds_played: 0,
-          current_position: p.preferred_position === 'Goalkeeper' ? 'GK' : 'C-MID',
+          current_position: 'C-MID',
+          isInjured: false,
+          isActive: true,
+          isStarter: false,
           total_matches: pStats.length,
           total_seconds_played: pStats.reduce((acc, curr) => acc + (curr.seconds_played || 0), 0),
           total_goals: pStats.reduce((acc, curr) => acc + (curr.goals_scored || 0), 0),
@@ -117,8 +155,22 @@ export default function MatchdayApp() {
 
       setSquad(formatted);
       setAvailablePlayerIds(formatted.map((p) => p.id));
-      setPitchPlayers(formatted.slice(0, 5));
-      setSubBench(formatted.slice(5));
+
+      const gkPlayer = formatted.find((p) => p.preferred_position === 'Goalkeeper');
+      if (gkPlayer) setFixedGkId(gkPlayer.id);
+
+      let starters: Player[] = [];
+      if (gkPlayer) starters.push({ ...gkPlayer, current_position: 'GK' });
+      const outfieldPool = formatted.filter((p) => !gkPlayer || p.id !== gkPlayer.id);
+
+      outfieldPool.slice(0, currentPitchCapacity - starters.length).forEach((p, i) => {
+        const role = activeForm[i + starters.length] || 'C-MID';
+        starters.push({ ...p, current_position: role });
+      });
+
+      setStartingPlayerIds(starters.map((p) => p.id));
+      setPitchPlayers(starters.map((p) => ({ ...p, isStarter: true })));
+      setSubBench(formatted.filter((p) => !starters.some((s) => s.id === p.id)).map((p) => ({ ...p, isStarter: false, current_position: 'SUB' })));
 
       const initialTrain: Record<string, TrainingRecord> = {};
       formatted.forEach((p) => {
@@ -148,6 +200,68 @@ export default function MatchdayApp() {
     setEditingPositionPlayerId(null);
   };
 
+  const handleSubSwap = (benchPlayerId: string) => {
+    triggerHaptic();
+    if (!selectedOnPitch) return;
+    const onPitchIndex = pitchPlayers.findIndex((p) => p.id === selectedOnPitch);
+    const benchIndex = subBench.findIndex((p) => p.id === benchPlayerId);
+    if (onPitchIndex === -1 || benchIndex === -1) return;
+
+    const newPitch = [...pitchPlayers];
+    const newBench = [...subBench];
+    const outgoing = newPitch[onPitchIndex];
+    const incoming = newBench[benchIndex];
+
+    const assignedRole = targetSubPosition || outgoing.current_position;
+
+    newPitch[onPitchIndex] = { ...incoming, current_position: assignedRole };
+    newBench[benchIndex] = { ...outgoing, current_position: 'SUB' };
+
+    setPitchPlayers(newPitch);
+    setSubBench(newBench);
+    setSelectedOnPitch(null);
+    setTargetSubPosition(null);
+  };
+
+  const handleLogGoal = (playerName: string, isOpponent = false) => {
+    triggerHaptic();
+    const currentMin = Math.max(1, Math.ceil((halfMinutes * 60 - secondsRemaining) / 60));
+    setGoals((prev) => [...prev, { id: Math.random().toString(), scorerName: playerName, minute: currentMin, isOpponent }]);
+  };
+
+  const handleMarkInjured = (playerId: string) => {
+    triggerHaptic();
+    const targetPlayer = [...pitchPlayers, ...subBench].find((p) => p.id === playerId);
+    if (!targetPlayer) return;
+
+    const isPlayerOnPitch = pitchPlayers.some((p) => p.id === playerId);
+    let updatedPitch = [...pitchPlayers];
+    let updatedBench = [...subBench];
+
+    if (isPlayerOnPitch && subBench.length > 0) {
+      const subIn = subBench.reduce((prev, curr) => (prev.seconds_played < curr.seconds_played ? prev : curr));
+      updatedPitch = pitchPlayers.map((p) => (p.id === playerId ? { ...subIn, current_position: p.current_position } : p));
+      updatedBench = subBench.filter((p) => p.id !== subIn.id);
+    } else if (isPlayerOnPitch) {
+      updatedPitch = pitchPlayers.filter((p) => p.id !== playerId);
+    } else {
+      updatedBench = subBench.filter((p) => p.id !== playerId);
+    }
+
+    setPitchPlayers(updatedPitch);
+    setSubBench(updatedBench);
+    setInjuredPlayers((prev) => [...prev, { ...targetPlayer, isInjured: true }]);
+  };
+
+  const handleRecoverPlayer = (playerId: string) => {
+    triggerHaptic();
+    const playerToRecover = injuredPlayers.find((p) => p.id === playerId);
+    if (!playerToRecover) return;
+
+    setInjuredPlayers((prev) => prev.filter((p) => p.id !== playerId));
+    setSubBench((prev) => [...prev, { ...playerToRecover, isInjured: false, current_position: 'SUB' }]);
+  };
+
   const handleApplyScheduledSub = (stepId: string) => {
     triggerHaptic();
     const step = generatedPlan.find((s) => s.id === stepId);
@@ -172,26 +286,109 @@ export default function MatchdayApp() {
     setGeneratedPlan((prev) => prev.map((s) => (s.id === stepId ? { ...s, status: 'completed' } : s)));
   };
 
+  const handleSaveAndFinishMatch = async () => {
+    triggerHaptic();
+    setSavingMatch(true);
+
+    try {
+      const startingLineupNames = [...pitchPlayers, ...subBench, ...injuredPlayers]
+        .filter((p) => p.isStarter)
+        .map((p) => `#${p.squad_number} ${p.name}`);
+
+      const { data: matchData, error: matchError } = await supabase
+        .from('matches')
+        .insert([
+          {
+            opponent_name: opponentName,
+            age_group: ageGroup,
+            our_score: ourGoalsCount,
+            opponent_score: opponentGoalsCount,
+            player_of_the_match: playerOfTheMatch,
+            starting_lineup: startingLineupNames,
+          },
+        ])
+        .select()
+        .single();
+
+      if (matchError || !matchData) {
+        alert('Error saving match record.');
+        setSavingMatch(false);
+        return;
+      }
+
+      const allActiveMatchPlayers = [...pitchPlayers, ...subBench, ...injuredPlayers];
+      const statsPayload = allActiveMatchPlayers.map((p) => {
+        const playerGoalsCount = goals.filter((g) => !g.isOpponent && g.scorerName === p.name).length;
+        return {
+          match_id: matchData.id,
+          player_id: p.id,
+          seconds_played: p.seconds_played,
+          goals_scored: playerGoalsCount,
+          is_potm: playerOfTheMatch === p.name,
+        };
+      });
+
+      await supabase.from('match_player_stats').insert(statsPayload);
+      alert('Matchday results & player stats successfully saved!');
+      loadSquad();
+      setActiveTab('stats');
+    } catch (err) {
+      console.error(err);
+      alert('An error occurred while saving.');
+    } finally {
+      setSavingMatch(false);
+    }
+  };
+
+  const generateWhatsAppSummary = () => {
+    let text = `⚽ *MATCHDAY RECAP — CO-GAFFER*\n`;
+    text += `Vs. ${opponentName} (${ageGroup})\n`;
+    text += `Score: Our Team ${ourGoalsCount} - ${opponentGoalsCount} ${opponentName}\n\n`;
+
+    const starters = [...pitchPlayers, ...subBench].filter((p) => p.isStarter);
+    if (starters.length > 0) {
+      text += `🚨 *Starting Lineup (${starters.length}):*\n`;
+      starters.forEach((p) => { text += `• #${p.squad_number} ${p.name}\n`; });
+      text += `\n`;
+    }
+
+    const ourGoals = goals.filter((g) => !g.isOpponent);
+    if (ourGoals.length > 0) {
+      text += `🎯 *Goals Scored:* ${ourGoals.length}\n`;
+      ourGoals.forEach((g) => { text += `• ${g.scorerName} (${g.minute}')\n`; });
+      text += `\n`;
+    }
+
+    if (playerOfTheMatch) text += `⭐ *Player of the Match:* ${playerOfTheMatch}\n\n`;
+
+    text += `⏱️ *Playing Time Logged:*\n`;
+    [...pitchPlayers, ...subBench].forEach((p) => {
+      text += `• #${p.squad_number} ${p.name}: ${Math.floor(p.seconds_played / 60)} mins ${p.isStarter ? '(Started)' : ''}\n`;
+    });
+
+    const encoded = encodeURIComponent(text);
+    window.open(`https://wa.me/?text=${encoded}`, '_blank');
+  };
+
   const handleAddCustomSubStep = () => {
     if (!planOffPlayerId || !planOnPlayerId) return;
     const offP = squad.find((p) => p.id === planOffPlayerId);
     const onP = squad.find((p) => p.id === planOnPlayerId);
     if (!offP || !onP) return;
 
+    const newStep: SubPlanStep = {
+      id: Math.random().toString(),
+      minute: planMinute,
+      offPlayerId: offP.id,
+      offPlayerName: `#${offP.squad_number} ${offP.name}`,
+      onPlayerId: onP.id,
+      onPlayerName: `#${onP.squad_number} ${onP.name}`,
+      assignedPosition: planTargetPos,
+      status: 'pending',
+    };
+
     triggerHaptic();
-    setGeneratedPlan((prev) => [
-      ...prev,
-      {
-        id: Math.random().toString(),
-        minute: planMinute,
-        offPlayerId: offP.id,
-        offPlayerName: `#${offP.squad_number} ${offP.name}`,
-        onPlayerId: onP.id,
-        onPlayerName: `#${onP.squad_number} ${onP.name}`,
-        assignedPosition: planTargetPos,
-        status: 'pending' as const,
-      },
-    ].sort((a, b) => a.minute - b.minute));
+    setGeneratedPlan((prev) => [...prev, newStep].sort((a, b) => a.minute - b.minute));
   };
 
   const handleAddPlayer = async (e: React.FormEvent) => {
@@ -218,7 +415,7 @@ export default function MatchdayApp() {
       <div className="flex justify-between items-center mb-4 px-1">
         <h1 className="text-2xl font-black text-lime-400 flex items-center gap-2"><span>📋</span> CO-GAFFER</h1>
         <span className="text-[10px] bg-gray-900 border border-gray-800 text-lime-400 font-extrabold px-2.5 py-1 rounded-md">
-          MODULAR ARCHITECTURE
+          RECONNECTED
         </span>
       </div>
 
@@ -252,14 +449,14 @@ export default function MatchdayApp() {
           subBench={subBench}
           injuredPlayers={injuredPlayers}
           currentPitchCapacity={currentPitchCapacity}
-          handleLogGoal={(name, isOpp) => setGoals((prev) => [...prev, { id: Math.random().toString(), scorerName: name, minute: 10, isOpponent: !!isOpp }])}
-          handleMarkInjured={() => {}}
-          handleRecoverPlayer={() => {}}
+          handleLogGoal={handleLogGoal}
+          handleMarkInjured={handleMarkInjured}
+          handleRecoverPlayer={handleRecoverPlayer}
           selectedOnPitch={selectedOnPitch}
           setSelectedOnPitch={setSelectedOnPitch}
           targetSubPosition={targetSubPosition}
           setTargetSubPosition={setTargetSubPosition}
-          handleSubSwap={() => {}}
+          handleSubSwap={handleSubSwap}
           handleChangeOnPitchPosition={handleChangeOnPitchPosition}
           editingPositionPlayerId={editingPositionPlayerId}
           setEditingPositionPlayerId={setEditingPositionPlayerId}
@@ -267,12 +464,15 @@ export default function MatchdayApp() {
           lowestSeconds={lowestSeconds}
           playerOfTheMatch={playerOfTheMatch}
           setPlayerOfTheMatch={setPlayerOfTheMatch}
-          generateWhatsAppSummary={() => {}}
-          handleSaveAndFinishMatch={() => {}}
+          generateWhatsAppSummary={generateWhatsAppSummary}
+          handleSaveAndFinishMatch={handleSaveAndFinishMatch}
           savingMatch={savingMatch}
           formatTime={formatTime}
           formatPlayerMins={formatPlayerMins}
           triggerHaptic={triggerHaptic}
+          formationIndex={formationIndex}
+          setFormationIndex={setFormationIndex}
+          activeFormations={activeFormations}
         />
       )}
 

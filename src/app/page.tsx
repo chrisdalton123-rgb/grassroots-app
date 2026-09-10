@@ -247,7 +247,6 @@ export default function MatchdayApp() {
       const avail = formatted.map((p) => p.id);
       setAvailablePlayerIds(avail);
 
-      // Prioritise designated goalkeeper for starting lineup
       const gkPlayer = formatted.find((p) => p.preferred_position === 'Goalkeeper');
       if (gkPlayer) setFixedGkId(gkPlayer.id);
 
@@ -493,7 +492,7 @@ export default function MatchdayApp() {
       updatedPitch = pitchPlayers.map((p) => (p.id === playerId ? { ...subIn, current_position: p.current_position } : p));
       updatedBench = subBench.filter((p) => p.id !== subIn.id);
     } else if (isPlayerOnPitch) {
-      updatedPitch = pitchPlayers.filter((p) => p.id === playerId);
+      updatedPitch = pitchPlayers.filter((p) => p.id !== playerId);
     } else {
       updatedBench = subBench.filter((p) => p.id !== playerId);
     }
@@ -926,11 +925,9 @@ export default function MatchdayApp() {
   ];
   const currentFormation = activeFormations[formationIndex] || activeFormations[0];
 
-  // LOGIC FIX: Isolate designated Goalkeeper explicitly, then fill formation roles
   const goalkeeperPlayer = pitchPlayers.find((p) => p.id === fixedGkId || p.preferred_position === 'Goalkeeper') || pitchPlayers[0];
   const outfieldPlayersOnPitch = pitchPlayers.filter((p) => p.id !== goalkeeperPlayer?.id);
 
-  // Distribute outfield players based on active formation roles
   const outfieldRoles = currentFormation.roles.filter((r) => r !== 'GK');
   const strikers: Player[] = [];
   const midfielders: Player[] = [];
@@ -1139,7 +1136,6 @@ export default function MatchdayApp() {
                 <div className="absolute bottom-0 left-1/2 w-36 h-12 border-t-2 border-x-2 border-emerald-400/40 rounded-t-xl -translate-x-1/2" />
 
                 <div className="relative z-10 flex flex-col justify-between h-full min-h-[380px] py-1 gap-2">
-                  {/* Strikers */}
                   {strikers.length > 0 && (
                     <div className="flex justify-around items-center">
                       {strikers.map((player) => {
@@ -1169,7 +1165,6 @@ export default function MatchdayApp() {
                     </div>
                   )}
 
-                  {/* Midfielders */}
                   {midfielders.length > 0 && (
                     <div className="flex justify-around items-center">
                       {midfielders.map((player) => {
@@ -1199,7 +1194,6 @@ export default function MatchdayApp() {
                     </div>
                   )}
 
-                  {/* Defenders */}
                   {defenders.length > 0 && (
                     <div className="flex justify-around items-center">
                       {defenders.map((player) => {
@@ -1229,7 +1223,6 @@ export default function MatchdayApp() {
                     </div>
                   )}
 
-                  {/* FIXED GOALKEEPER POSITION AT BOTTOM */}
                   {goalkeeperPlayer && (
                     <div className="flex justify-center items-center">
                       <button
@@ -1244,7 +1237,7 @@ export default function MatchdayApp() {
                         }`}
                       >
                         <span className="text-xs font-black block">
-                          🧤 #{goalkeeperPlayer.squad_number} {goalkeeperPlayer.name} {goalkeeperPlayer.isStarter ? '🚨' : ''}
+                          GK #{goalkeeperPlayer.squad_number} {goalkeeperPlayer.name} {goalkeeperPlayer.isStarter ? '🚨' : ''}
                         </span>
                         <span className="text-[9px] font-mono text-lime-300 font-bold">
                           GK • {formatPlayerMins(goalkeeperPlayer.seconds_played)}
@@ -1256,63 +1249,76 @@ export default function MatchdayApp() {
               </div>
             </div>
           ) : (
-            /* COMPACT CARDS VIEW */
+            /* SLEEK COMPACT CARDS VIEW */
             <div className="mb-6">
-              <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-2 font-bold flex justify-between">
+              <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-2.5 font-extrabold flex justify-between items-center">
                 <span>On Pitch ({pitchPlayers.length}/{currentPitchCapacity})</span>
-                {isPowerplayActive && <span className="text-purple-400 font-bold">⚡ POWERPLAY (+1)</span>}
+                {isPowerplayActive && <span className="text-purple-400 font-black">⚡ POWERPLAY (+1)</span>}
               </h2>
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-2 gap-2.5">
                 {pitchPlayers.map((player) => {
                   const isSelected = selectedOnPitch === player.id;
                   const isFixedGk = player.id === fixedGkId || player.preferred_position === 'Goalkeeper';
 
                   return (
-                    <div key={player.id} className="relative">
+                    <div
+                      key={player.id}
+                      className={`rounded-xl border transition-all overflow-hidden flex flex-col justify-between ${
+                        isSelected
+                          ? 'bg-yellow-400 text-black border-yellow-200 shadow-lg scale-[1.02]'
+                          : isFixedGk
+                          ? 'bg-gray-950/80 border-lime-500/60 text-white'
+                          : 'bg-gray-950/80 border-gray-800/80 text-white hover:border-gray-700'
+                      }`}
+                    >
+                      {/* CARD TAP HEADER */}
                       <button
                         onClick={() => {
                           triggerHaptic();
                           setSelectedOnPitch(isSelected ? null : player.id);
                         }}
-                        className={`w-full p-3.5 rounded-2xl border-2 text-left transition-all relative ${
-                          isSelected
-                            ? 'bg-yellow-500 border-yellow-300 text-black scale-102 shadow-lg'
-                            : isFixedGk
-                            ? 'bg-gray-900 border-lime-500 text-white'
-                            : 'bg-gray-900 border-gray-800 text-white'
-                        }`}
+                        className="p-2.5 text-left w-full"
                       >
                         <div className="flex justify-between items-center mb-1">
-                          <span className="font-black text-base">
+                          <span className={`text-[11px] font-black tracking-tight truncate ${isSelected ? 'text-black' : 'text-white'}`}>
                             #{player.squad_number} {player.name}
                           </span>
-                          <div className="flex gap-1">
-                            {player.isStarter && (
-                              <span className="text-[9px] bg-red-500/20 border border-red-500/50 text-red-400 px-1.5 py-0.5 rounded font-black">
-                                STARTER
-                              </span>
-                            )}
-                            <span className={`text-xs px-2 py-0.5 rounded font-black ${isSelected ? 'bg-black text-yellow-500' : isFixedGk ? 'bg-lime-500 text-black' : 'bg-gray-800 text-lime-400'}`}>
-                              {isFixedGk ? 'GK' : player.current_position}
-                            </span>
-                          </div>
+                          <span
+                            className={`text-[9px] px-1.5 py-0.5 rounded font-black tracking-wider uppercase ${
+                              isSelected
+                                ? 'bg-black text-yellow-400'
+                                : isFixedGk
+                                ? 'bg-lime-500 text-black'
+                                : 'bg-gray-800 text-lime-400'
+                            }`}
+                          >
+                            {isFixedGk ? 'GK' : player.current_position}
+                          </span>
                         </div>
 
-                        <div className="flex justify-between items-center text-xs font-mono opacity-90 mt-2">
-                          <span>{formatPlayerMins(player.seconds_played)} played</span>
+                        <div className="flex justify-between items-center text-[10px] font-mono mt-1 opacity-90">
+                          <span className={`font-bold ${isSelected ? 'text-black' : 'text-gray-300'}`}>
+                            {formatPlayerMins(player.seconds_played)}
+                          </span>
+                          {player.isStarter && (
+                            <span className="text-[8px] bg-red-500/20 text-red-400 border border-red-500/40 px-1 py-0.2 rounded font-black">
+                              STARTER
+                            </span>
+                          )}
                         </div>
                       </button>
 
-                      <div className="flex gap-1.5 mt-1.5">
+                      {/* QUICK ACTION BOTTOM BAR */}
+                      <div className="flex border-t border-gray-800/60 bg-black/40">
                         <button
                           onClick={() => handleLogGoal(player.name, false)}
-                          className="flex-1 bg-gray-950 hover:bg-lime-500 hover:text-black border border-gray-800 text-gray-300 text-[10px] font-bold py-2 rounded-xl transition-all min-h-[38px]"
+                          className="flex-1 py-1.5 text-[10px] font-black text-gray-300 hover:text-white hover:bg-lime-500/20 transition-all border-r border-gray-800/60 flex items-center justify-center gap-1"
                         >
                           ⚽ GOAL
                         </button>
                         <button
                           onClick={() => handleMarkInjured(player.id)}
-                          className="bg-red-950/80 hover:bg-red-600 text-red-300 hover:text-white border border-red-800 text-[10px] font-bold px-3 py-2 rounded-xl transition-all min-h-[38px]"
+                          className="px-3 py-1.5 text-[10px] font-black text-red-400 hover:bg-red-500/20 transition-all flex items-center justify-center"
                         >
                           🏥
                         </button>
@@ -1324,13 +1330,13 @@ export default function MatchdayApp() {
             </div>
           )}
 
-          {/* SUB BENCH */}
-          <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 mb-6 shadow-md">
-            <h2 className="text-xs uppercase tracking-widest text-amber-400 mb-3 font-bold flex justify-between">
+          {/* SLEEK SUB BENCH CARDS */}
+          <div className="bg-gray-900/90 p-3.5 rounded-2xl border border-gray-800 mb-6 shadow-md">
+            <h2 className="text-xs uppercase tracking-widest text-amber-400 mb-2.5 font-black flex justify-between items-center">
               <span>Substitutes Bench ({subBench.length})</span>
-              <span className="text-lime-400">⭐ Priority Sub</span>
+              <span className="text-lime-400 text-[10px]">⭐ Priority Sub</span>
             </h2>
-            <div className="flex flex-col gap-2.5">
+            <div className="flex flex-col gap-2">
               {subBench.map((player) => {
                 const isLowest = player.seconds_played === lowestSeconds;
 
@@ -1339,32 +1345,30 @@ export default function MatchdayApp() {
                     <button
                       disabled={!selectedOnPitch}
                       onClick={() => handleSubSwap(player.id)}
-                      className={`flex-1 p-3.5 rounded-2xl flex justify-between items-center text-left border transition-all min-h-[48px] ${
+                      className={`flex-1 px-3 py-2.5 rounded-xl flex justify-between items-center text-left border transition-all ${
                         selectedOnPitch
                           ? 'bg-amber-500/20 border-amber-500 text-amber-200 active:bg-amber-500 active:text-black'
                           : isLowest
-                          ? 'bg-gray-950 border-lime-500/50 text-gray-300'
-                          : 'bg-gray-950 border-gray-800 text-gray-500'
+                          ? 'bg-gray-950/90 border-lime-500/50 text-gray-200'
+                          : 'bg-gray-950/80 border-gray-800/80 text-gray-400'
                       }`}
                     >
                       <div className="flex items-center gap-2">
-                        <div>
-                          <span className="font-extrabold text-base">#{player.squad_number} {player.name}</span>
-                          <span className="ml-3 text-xs font-mono">{formatPlayerMins(player.seconds_played)}</span>
-                        </div>
+                        <span className="font-black text-xs text-white">#{player.squad_number} {player.name}</span>
+                        <span className="text-[11px] font-mono font-bold text-gray-400">{formatPlayerMins(player.seconds_played)}</span>
                       </div>
 
                       {selectedOnPitch ? (
-                        <span className="font-black text-xs">SUB ON →</span>
+                        <span className="font-black text-[10px] text-amber-300">SUB ON →</span>
                       ) : isLowest ? (
-                        <span className="bg-lime-500/20 text-lime-400 border border-lime-500/40 text-[10px] px-2 py-1 rounded-md font-bold">
+                        <span className="bg-lime-500/20 text-lime-400 border border-lime-500/40 text-[9px] px-2 py-0.5 rounded font-extrabold">
                           LOWEST MINS
                         </span>
                       ) : null}
                     </button>
                     <button
                       onClick={() => handleMarkInjured(player.id)}
-                      className="bg-red-950/80 border border-red-800 text-red-400 font-bold px-3 rounded-2xl text-xs min-h-[48px]"
+                      className="bg-red-950/60 border border-red-800/60 text-red-400 font-black px-3 rounded-xl text-xs flex items-center justify-center"
                     >
                       🏥
                     </button>
@@ -1375,21 +1379,21 @@ export default function MatchdayApp() {
 
             {/* INJURED PLAYERS DRAWER */}
             {injuredPlayers.length > 0 && (
-              <div className="mt-4 pt-3 border-t border-gray-800">
+              <div className="mt-3 pt-2.5 border-t border-gray-800/80">
                 <h3 className="text-xs font-bold text-red-400 mb-2 uppercase tracking-wider flex justify-between items-center">
                   <span>🏥 Injured / Resting ({injuredPlayers.length})</span>
-                  <span className="text-[10px] text-gray-400">Tap to return to play</span>
+                  <span className="text-[10px] text-gray-400">Tap to recover</span>
                 </h3>
                 <div className="flex flex-col gap-2">
                   {injuredPlayers.map((player) => (
-                    <div key={player.id} className="p-3 bg-black rounded-xl border border-red-900/50 flex justify-between items-center text-xs">
+                    <div key={player.id} className="p-2.5 bg-black rounded-xl border border-red-900/50 flex justify-between items-center text-xs">
                       <div>
                         <span className="font-bold text-gray-300">#{player.squad_number} {player.name}</span>
                         <span className="ml-2 font-mono text-[10px] text-gray-500">{formatPlayerMins(player.seconds_played)}</span>
                       </div>
                       <button
                         onClick={() => handleRecoverPlayer(player.id)}
-                        className="bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500 hover:text-black font-extrabold text-[10px] px-3 py-1.5 rounded-lg transition-all"
+                        className="bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500 hover:text-black font-extrabold text-[10px] px-2.5 py-1 rounded-lg transition-all"
                       >
                         ✓ RECOVERED
                       </button>

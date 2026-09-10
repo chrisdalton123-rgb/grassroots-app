@@ -13,6 +13,7 @@ type Player = {
   isAvailable?: boolean;
   isInjured?: boolean;
   isActive?: boolean;
+  isStarter?: boolean;
   total_matches?: number;
   total_seconds_played?: number;
   total_goals?: number;
@@ -51,6 +52,7 @@ type SavedMatch = {
   our_score: number;
   opponent_score: number;
   player_of_the_match: string | null;
+  starting_lineup?: string[] | null;
   match_date: string;
 };
 
@@ -119,8 +121,9 @@ export default function MatchdayApp() {
   const [playerOfTheMatch, setPlayerOfTheMatch] = useState<string | null>(null);
   const [opponentName, setOpponentName] = useState<string>('Opponent');
 
-  // Planner States
+  // Planner & Starter Selection States
   const [availablePlayerIds, setAvailablePlayerIds] = useState<string[]>([]);
+  const [startingPlayerIds, setStartingPlayerIds] = useState<string[]>([]);
   const [fixedGkId, setFixedGkId] = useState<string | null>(null);
   const [gkMode, setGkMode] = useState<'fixed' | 'split'>('fixed');
   const [half2GkId, setHalf2GkId] = useState<string | null>(null);
@@ -232,6 +235,7 @@ export default function MatchdayApp() {
           current_position: p.preferred_position || 'SUB',
           isInjured: false,
           isActive: true,
+          isStarter: false,
           total_matches: totalMatches,
           total_seconds_played: totalSecs,
           total_goals: totalGoals,
@@ -240,7 +244,9 @@ export default function MatchdayApp() {
       });
 
       setSquad(formatted);
-      setAvailablePlayerIds(formatted.map((p) => p.id));
+      const avail = formatted.map((p) => p.id);
+      setAvailablePlayerIds(avail);
+      setStartingPlayerIds(avail.slice(0, currentPitchCapacity));
       
       const initialTraining: Record<string, TrainingRecord> = {};
       formatted.forEach((p) => {
@@ -256,8 +262,11 @@ export default function MatchdayApp() {
       const defaultGk = formatted.find((p) => p.preferred_position === 'Goalkeeper');
       if (defaultGk) setFixedGkId(defaultGk.id);
 
-      setPitchPlayers(formatted.slice(0, currentPitchCapacity));
-      setSubBench(formatted.slice(currentPitchCapacity));
+      const initialPitch = formatted.slice(0, currentPitchCapacity).map((p) => ({ ...p, isStarter: true }));
+      const initialBench = formatted.slice(currentPitchCapacity).map((p) => ({ ...p, isStarter: false }));
+
+      setPitchPlayers(initialPitch);
+      setSubBench(initialBench);
     }
     setLoading(false);
   };
@@ -305,6 +314,7 @@ export default function MatchdayApp() {
       .map((p) => p.id);
 
     setAvailablePlayerIds(presentIds);
+    setStartingPlayerIds(presentIds.slice(0, currentPitchCapacity));
     alert(`Sync complete! ${presentIds.length} present players selected for upcoming matchday.`);
     setActiveTab('planner');
   };
@@ -321,9 +331,40 @@ export default function MatchdayApp() {
       setIsClockRunning(false);
 
       const activeSquad = squad.filter((p) => availablePlayerIds.includes(p.id) && !p.isInjured);
-      setPitchPlayers(activeSquad.slice(0, capacity));
-      setSubBench(activeSquad.slice(capacity));
+      setStartingPlayerIds(activeSquad.slice(0, capacity).map((p) => p.id));
+      setPitchPlayers(activeSquad.slice(0, capacity).map((p) => ({ ...p, isStarter: true })));
+      setSubBench(activeSquad.slice(capacity).map((p) => ({ ...p, isStarter: false })));
     }
+  };
+
+  const toggleStarterSelection = (id: string) => {
+    triggerHaptic();
+    setStartingPlayerIds((prev) => {
+      if (prev.includes(id)) {
+        return prev.filter((pId) => pId !== id);
+      }
+      if (prev.length >= currentPitchCapacity) {
+        alert(`You can only select up to ${currentPitchCapacity} starters for this pitch size (${basePitchCapacity}v${basePitchCapacity}).`);
+        return prev;
+      }
+      return [...prev, id];
+    });
+  };
+
+  const autoSelectStarters = () => {
+    triggerHaptic();
+    const active = squad.filter((p) => availablePlayerIds.includes(p.id));
+    let selected: string[] = [];
+
+    if (fixedGkId && active.some((p) => p.id === fixedGkId)) {
+      selected.push(fixedGkId);
+    }
+
+    const remainingOutfieldNeeded = currentPitchCapacity - selected.length;
+    const outfieldPool = active.filter((p) => !selected.includes(p.id));
+
+    selected = [...selected, ...outfieldPool.slice(0, remainingOutfieldNeeded).map((p) => p.id)];
+    setStartingPlayerIds(selected);
   };
 
   const getRecommendation = () => {
@@ -409,7 +450,6 @@ export default function MatchdayApp() {
 
     let updatedPitch = [...pitchPlayers];
     let updatedBench = [...subBench];
-    const newCap = newPowerplayState ? basePitchCapacity + 1 : basePitchCapacity;
 
     if (newPowerplayState && subBench.length > 0) {
       const subToPromote = subBench[0];
@@ -426,7 +466,7 @@ export default function MatchdayApp() {
     }
 
     if (generatedPlan.length > 0) {
-      recalculateFutureSubSchedule(updatedPitch, updatedBench, newCap);
+      recalculateFutureSubSchedule(updatedPitch, updatedBench, isPowerplayActive ? basePitchCapacity + 1 : basePitchCapacity);
     }
   };
 
@@ -651,30 +691,25 @@ export default function MatchdayApp() {
     const active = squad.filter((p) => availablePlayerIds.includes(p.id));
     if (active.length <= currentPitchCapacity) return;
 
-    let gkPlayer: Player | undefined;
-    let outfieldPlayers = [...active];
-
-    if (fixedGkId) {
-      gkPlayer = active.find((p) => p.id === fixedGkId);
-      if (gkPlayer) outfieldPlayers = active.filter((p) => p.id !== fixedGkId);
+    let starters = active.filter((p) => startingPlayerIds.includes(p.id));
+    if (starters.length < currentPitchCapacity) {
+      const fillIn = active.filter((p) => !startingPlayerIds.includes(p.id));
+      starters = [...starters, ...fillIn.slice(0, currentPitchCapacity - starters.length)];
     }
 
-    const outfieldCapacity = currentPitchCapacity - 1;
-    const startingOutfieldPitch = outfieldPlayers.slice(0, outfieldCapacity);
-    const startingBench = outfieldPlayers.slice(outfieldCapacity);
+    const bench = active.filter((p) => !starters.some((s) => s.id === p.id));
 
-    const fullStartingPitch = gkPlayer
-      ? [{ ...gkPlayer, current_position: 'Goalkeeper' }, ...startingOutfieldPitch]
-      : startingOutfieldPitch;
+    const starterPitch = starters.map((p) => ({ ...p, isStarter: true }));
+    const benchPlayers = bench.map((p) => ({ ...p, isStarter: false }));
 
-    setPitchPlayers(fullStartingPitch);
-    setSubBench(startingBench);
+    setPitchPlayers(starterPitch);
+    setSubBench(benchPlayers);
 
     const plan: SubPlanStep[] = [];
     const totalMatchMins = halfMinutes * 2;
 
-    let currentOutfieldPitch = [...startingOutfieldPitch];
-    let currentBench = [...startingBench];
+    let currentOutfieldPitch = starterPitch.filter((p) => p.id !== fixedGkId);
+    let currentBench = [...benchPlayers];
     let interval = rotationIntervalMins;
 
     while (interval < totalMatchMins) {
@@ -729,6 +764,10 @@ export default function MatchdayApp() {
     setSavingMatch(true);
 
     try {
+      const startingLineupNames = [...pitchPlayers, ...subBench, ...injuredPlayers]
+        .filter((p) => p.isStarter)
+        .map((p) => `#${p.squad_number} ${p.name}`);
+
       const { data: matchData, error: matchError } = await supabase
         .from('matches')
         .insert([
@@ -738,6 +777,7 @@ export default function MatchdayApp() {
             our_score: ourGoalsCount,
             opponent_score: opponentGoalsCount,
             player_of_the_match: playerOfTheMatch,
+            starting_lineup: startingLineupNames,
           },
         ])
         .select()
@@ -783,7 +823,16 @@ export default function MatchdayApp() {
     let text = `⚽ *MATCHDAY RECAP — CO-GAFFER*\n`;
     text += `Vs. ${opponentName} (${ageGroup})\n`;
     text += `Score: Our Team ${ourGoalsCount} - ${opponentGoalsCount} ${opponentName}\n\n`;
-    
+
+    const starters = [...pitchPlayers, ...subBench].filter((p) => p.isStarter);
+    if (starters.length > 0) {
+      text += `🚨 *Starting Lineup (${starters.length}):*\n`;
+      starters.forEach((p) => {
+        text += `• #${p.squad_number} ${p.name}\n`;
+      });
+      text += `\n`;
+    }
+
     const ourGoals = goals.filter((g) => !g.isOpponent);
     if (ourGoals.length > 0) {
       text += `🎯 *Goals Scored:* ${ourGoals.length}\n`;
@@ -800,7 +849,7 @@ export default function MatchdayApp() {
     text += `⏱️ *Playing Time Logged:*\n`;
     const combined = [...pitchPlayers, ...subBench];
     combined.forEach((p) => {
-      text += `• #${p.squad_number} ${p.name}: ${Math.floor(p.seconds_played / 60)} mins\n`;
+      text += `• #${p.squad_number} ${p.name}: ${Math.floor(p.seconds_played / 60)} mins ${p.isStarter ? '(Started)' : ''}\n`;
     });
 
     text += `\nEqual playing time achieved across all players! ⚽👏`;
@@ -1078,7 +1127,7 @@ export default function MatchdayApp() {
                               isSelected ? 'bg-yellow-400 text-black border-yellow-200 scale-105 shadow-xl' : 'bg-black/80 border-lime-400/50 text-white'
                             }`}
                           >
-                            <span className="text-[10px] font-black block">#{player.squad_number} {player.name}</span>
+                            <span className="text-[10px] font-black block">#{player.squad_number} {player.name} {player.isStarter ? '🚨' : ''}</span>
                             <span className="text-[9px] font-mono text-lime-300">STR • {formatPlayerMins(player.seconds_played)}</span>
                           </button>
                         );
@@ -1101,7 +1150,7 @@ export default function MatchdayApp() {
                               isSelected ? 'bg-yellow-400 text-black border-yellow-200 scale-105 shadow-xl' : 'bg-black/80 border-lime-400/50 text-white'
                             }`}
                           >
-                            <span className="text-[10px] font-black block">#{player.squad_number} {player.name}</span>
+                            <span className="text-[10px] font-black block">#{player.squad_number} {player.name} {player.isStarter ? '🚨' : ''}</span>
                             <span className="text-[9px] font-mono text-lime-300">MID • {formatPlayerMins(player.seconds_played)}</span>
                           </button>
                         );
@@ -1124,7 +1173,7 @@ export default function MatchdayApp() {
                               isSelected ? 'bg-yellow-400 text-black border-yellow-200 scale-105 shadow-xl' : 'bg-black/80 border-lime-400/50 text-white'
                             }`}
                           >
-                            <span className="text-[10px] font-black block">#{player.squad_number} {player.name}</span>
+                            <span className="text-[10px] font-black block">#{player.squad_number} {player.name} {player.isStarter ? '🚨' : ''}</span>
                             <span className="text-[9px] font-mono text-lime-300">DEF • {formatPlayerMins(player.seconds_played)}</span>
                           </button>
                         );
@@ -1146,7 +1195,7 @@ export default function MatchdayApp() {
                             isSelected ? 'bg-yellow-400 text-black border-yellow-200 scale-105 shadow-xl' : 'bg-black/90 border-lime-400 text-white'
                           }`}
                         >
-                          <span className="text-[10px] font-black block">🧤 #{player.squad_number} {player.name}</span>
+                          <span className="text-[10px] font-black block">🧤 #{player.squad_number} {player.name} {player.isStarter ? '🚨' : ''}</span>
                           <span className="text-[9px] font-mono text-lime-300">GK • {formatPlayerMins(player.seconds_played)}</span>
                         </button>
                       );
@@ -1185,9 +1234,16 @@ export default function MatchdayApp() {
                           <span className="font-extrabold text-base">
                             #{player.squad_number} {player.name}
                           </span>
-                          <span className={`text-xs px-2 py-0.5 rounded font-black ${isSelected ? 'bg-black text-yellow-500' : isFixedGk ? 'bg-lime-500 text-black' : 'bg-gray-800 text-lime-400'}`}>
-                            {isFixedGk ? 'GK (LOCKED)' : player.current_position}
-                          </span>
+                          <div className="flex gap-1">
+                            {player.isStarter && (
+                              <span className="text-[9px] bg-red-500/20 border border-red-500/50 text-red-400 px-1.5 py-0.5 rounded font-black">
+                                STARTER
+                              </span>
+                            )}
+                            <span className={`text-xs px-2 py-0.5 rounded font-black ${isSelected ? 'bg-black text-yellow-500' : isFixedGk ? 'bg-lime-500 text-black' : 'bg-gray-800 text-lime-400'}`}>
+                              {isFixedGk ? 'GK (LOCKED)' : player.current_position}
+                            </span>
+                          </div>
                         </div>
 
                         <div className="flex justify-between items-center text-xs font-mono opacity-90 mt-2">
@@ -1455,7 +1511,7 @@ export default function MatchdayApp() {
         </div>
       )}
 
-      {/* TAB 3: PLANNER */}
+      {/* TAB 3: PLANNER WITH STARTING LINEUP SELECTION */}
       {activeTab === 'planner' && (
         <div>
           <h1 className="text-xl font-black text-lime-400 mb-2">Matchday Scheduler</h1>
@@ -1588,7 +1644,7 @@ export default function MatchdayApp() {
 
           <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
             <h2 className="text-xs uppercase tracking-widest text-gray-300 font-bold mb-3 flex justify-between">
-              <span>Select Available Players ({availablePlayerIds.length}/{squad.length})</span>
+              <span>1. Available Players ({availablePlayerIds.length}/{squad.length})</span>
             </h2>
             <div className="grid grid-cols-2 gap-2">
               {squad.map((player) => {
@@ -1612,6 +1668,45 @@ export default function MatchdayApp() {
                   </button>
                 );
               })}
+            </div>
+          </div>
+
+          {/* NEW STARTING LINEUP SELECTION CARD */}
+          <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
+            <div className="flex justify-between items-center mb-3">
+              <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold">
+                2. Select Starting Lineup ({startingPlayerIds.length}/{currentPitchCapacity})
+              </h2>
+              <button
+                onClick={autoSelectStarters}
+                className="text-[10px] bg-lime-500/20 text-lime-400 border border-lime-500/40 px-2 py-0.5 rounded font-black hover:bg-lime-500 hover:text-black transition-all"
+              >
+                ⚡ AUTO-SELECT
+              </button>
+            </div>
+
+            <div className="grid grid-cols-2 gap-2">
+              {squad
+                .filter((p) => availablePlayerIds.includes(p.id))
+                .map((player) => {
+                  const isStarter = startingPlayerIds.includes(player.id);
+                  const isGk = player.id === fixedGkId;
+
+                  return (
+                    <button
+                      key={player.id}
+                      onClick={() => toggleStarterSelection(player.id)}
+                      className={`p-2.5 rounded-lg text-left border font-bold text-xs flex justify-between items-center ${
+                        isStarter
+                          ? 'bg-red-500/20 border-red-500 text-red-300'
+                          : 'bg-black border-gray-800 text-gray-400'
+                      }`}
+                    >
+                      <span>#{player.squad_number} {player.name} {isGk ? '🧤' : ''}</span>
+                      <span className="text-[10px] font-black">{isStarter ? '🚨 STARTER' : 'SUB'}</span>
+                    </button>
+                  );
+                })}
             </div>
           </div>
 
@@ -1894,19 +1989,28 @@ export default function MatchdayApp() {
             </h2>
             <div className="flex flex-col gap-2">
               {matchHistory.map((m) => (
-                <div key={m.id} className="p-3 bg-black rounded-lg border border-gray-800 flex justify-between items-center text-xs">
-                  <div>
-                    <span className="font-bold text-white block">Vs. {m.opponent_name} ({m.age_group})</span>
-                    <span className="text-[10px] text-gray-400 font-mono">{m.match_date}</span>
+                <div key={m.id} className="p-3 bg-black rounded-lg border border-gray-800 flex flex-col gap-1.5 text-xs">
+                  <div className="flex justify-between items-center">
+                    <div>
+                      <span className="font-bold text-white block">Vs. {m.opponent_name} ({m.age_group})</span>
+                      <span className="text-[10px] text-gray-400 font-mono">{m.match_date}</span>
+                    </div>
+                    <div className="text-right">
+                      <span className="font-mono font-black text-sm text-lime-400 block">
+                        {m.our_score} - {m.opponent_score}
+                      </span>
+                      {m.player_of_the_match && (
+                        <span className="text-[10px] text-purple-300 font-bold">⭐ {m.player_of_the_match}</span>
+                      )}
+                    </div>
                   </div>
-                  <div className="text-right">
-                    <span className="font-mono font-black text-sm text-lime-400 block">
-                      {m.our_score} - {m.opponent_score}
-                    </span>
-                    {m.player_of_the_match && (
-                      <span className="text-[10px] text-purple-300 font-bold">⭐ {m.player_of_the_match}</span>
-                    )}
-                  </div>
+
+                  {m.starting_lineup && m.starting_lineup.length > 0 && (
+                    <div className="pt-2 border-t border-gray-900 text-[10px]">
+                      <span className="text-gray-400 font-bold block mb-1">🚨 Starters:</span>
+                      <span className="text-lime-300 font-mono">{m.starting_lineup.join(', ')}</span>
+                    </div>
+                  )}
                 </div>
               ))}
             </div>
@@ -1930,7 +2034,7 @@ export default function MatchdayApp() {
             activeTab === 'training' ? 'bg-lime-500 text-black' : 'text-gray-400'
           }`}
         >
-          🏋️ TRAINING
+          🏋️ DRILLS
         </button>
         <button
           onClick={() => setActiveTab('planner')}

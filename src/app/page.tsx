@@ -19,6 +19,13 @@ type Player = {
   total_potm?: number;
 };
 
+type TrainingRecord = {
+  playerId: string;
+  status: 'attended' | 'absent' | 'excused';
+  effortRating: number; // 1 to 5
+  notes: string;
+};
+
 type SubPlanStep = {
   id: string;
   minute: number;
@@ -80,7 +87,7 @@ const FORMATION_OPTIONS: Record<number, { label: string; roles: string[] }[]> = 
 };
 
 export default function MatchdayApp() {
-  const [activeTab, setActiveTab] = useState<'matchday' | 'planner' | 'squad' | 'stats'>('matchday');
+  const [activeTab, setActiveTab] = useState<'matchday' | 'planner' | 'training' | 'squad' | 'stats'>('matchday');
   const [squad, setSquad] = useState<Player[]>([]);
   const [pitchPlayers, setPitchPlayers] = useState<Player[]>([]);
   const [subBench, setSubBench] = useState<Player[]>([]);
@@ -88,6 +95,10 @@ export default function MatchdayApp() {
   const [selectedOnPitch, setSelectedOnPitch] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
   const [savingMatch, setSavingMatch] = useState(false);
+
+  // Training Session States
+  const [sessionDate, setSessionDate] = useState<string>(new Date().toISOString().split('T')[0]);
+  const [trainingData, setTrainingData] = useState<Record<string, TrainingRecord>>({});
 
   // Match & Format Settings
   const [ageGroup, setAgeGroup] = useState<string>('U8-U9');
@@ -231,6 +242,17 @@ export default function MatchdayApp() {
       setSquad(formatted);
       setAvailablePlayerIds(formatted.map((p) => p.id));
       
+      const initialTraining: Record<string, TrainingRecord> = {};
+      formatted.forEach((p) => {
+        initialTraining[p.id] = {
+          playerId: p.id,
+          status: 'attended',
+          effortRating: 5,
+          notes: '',
+        };
+      });
+      setTrainingData(initialTraining);
+
       const defaultGk = formatted.find((p) => p.preferred_position === 'Goalkeeper');
       if (defaultGk) setFixedGkId(defaultGk.id);
 
@@ -243,6 +265,49 @@ export default function MatchdayApp() {
   useEffect(() => {
     loadSquad();
   }, []);
+
+  const handleTrainingStatusChange = (playerId: string, status: 'attended' | 'absent' | 'excused') => {
+    triggerHaptic();
+    setTrainingData((prev) => ({
+      ...prev,
+      [playerId]: {
+        ...prev[playerId],
+        status,
+      },
+    }));
+  };
+
+  const handleRatingChange = (playerId: string, effortRating: number) => {
+    triggerHaptic();
+    setTrainingData((prev) => ({
+      ...prev,
+      [playerId]: {
+        ...prev[playerId],
+        effortRating,
+      },
+    }));
+  };
+
+  const handleNotesChange = (playerId: string, notes: string) => {
+    setTrainingData((prev) => ({
+      ...prev,
+      [playerId]: {
+        ...prev[playerId],
+        notes,
+      },
+    }));
+  };
+
+  const applyTrainingToAvailability = () => {
+    triggerHaptic();
+    const presentIds = squad
+      .filter((p) => trainingData[p.id]?.status === 'attended')
+      .map((p) => p.id);
+
+    setAvailablePlayerIds(presentIds);
+    alert(`Sync complete! ${presentIds.length} present players selected for upcoming matchday.`);
+    setActiveTab('planner');
+  };
 
   const applyAgePreset = (presetKey: string) => {
     setAgeGroup(presetKey);
@@ -803,11 +868,12 @@ export default function MatchdayApp() {
   ];
   const currentFormation = activeFormations[formationIndex] || activeFormations[0];
 
-  // Map pitch players to formation roles dynamically
   const strikers = pitchPlayers.filter((_, idx) => currentFormation.roles[idx] === 'STR');
   const midfielders = pitchPlayers.filter((_, idx) => currentFormation.roles[idx] === 'MID');
   const defenders = pitchPlayers.filter((_, idx) => currentFormation.roles[idx] === 'DEF');
   const goalkeepers = pitchPlayers.filter((_, idx) => currentFormation.roles[idx] === 'GK' || idx === 0);
+
+  const attendedCount = squad.filter((p) => trainingData[p.id]?.status === 'attended').length;
 
   return (
     <div className="bg-black text-white min-h-screen pb-20 p-4 font-sans select-none max-w-md mx-auto">
@@ -831,7 +897,6 @@ export default function MatchdayApp() {
       {/* TAB 1: MATCHDAY TOUCHLINE */}
       {activeTab === 'matchday' && (
         <div>
-          {/* RESTORED AGE GROUP SELECTOR & FORMAT BAR */}
           <div className="bg-gray-950 p-2.5 rounded-xl mb-3 border border-gray-850 flex flex-col gap-2">
             <div className="flex justify-between items-center">
               <select
@@ -861,7 +926,6 @@ export default function MatchdayApp() {
               </button>
             </div>
 
-            {/* Collapsible Format Settings */}
             {showSettings && (
               <div className="pt-2 border-t border-gray-850 flex justify-between items-center text-xs">
                 <div>
@@ -886,7 +950,6 @@ export default function MatchdayApp() {
             )}
           </div>
 
-          {/* FA POWERPLAY ALERT BANNER */}
           {(goalDifference >= 4 || isPowerplayActive) && (
             <div className="bg-purple-950 border border-purple-500/50 p-3 rounded-xl mb-3 flex justify-between items-center">
               <div>
@@ -906,7 +969,6 @@ export default function MatchdayApp() {
             </div>
           )}
 
-          {/* SCOREBOARD & MATCH CLOCK HEADER */}
           <div className="bg-gray-900 p-4 rounded-xl mb-4 border border-gray-800">
             <div className="flex justify-between items-center mb-3 pb-3 border-b border-gray-800">
               <div className="flex items-center gap-3">
@@ -949,7 +1011,6 @@ export default function MatchdayApp() {
             </div>
           </div>
 
-          {/* PRE-PLANNED SUBS WIDGET */}
           {pendingPlanSteps.length > 0 && (
             <div className="bg-gray-900 p-3.5 rounded-xl border border-lime-500/40 mb-4">
               <h3 className="text-xs font-black text-lime-400 mb-2 uppercase tracking-wider flex justify-between items-center">
@@ -976,7 +1037,6 @@ export default function MatchdayApp() {
             </div>
           )}
 
-          {/* TACTICAL PITCH BOARD VIEW WITH DYNAMIC FORMATION UPDATES */}
           {viewMode === 'pitch' ? (
             <div className="mb-6 bg-gray-900 p-3.5 rounded-2xl border border-gray-800">
               <div className="flex justify-between items-center mb-3">
@@ -996,7 +1056,6 @@ export default function MatchdayApp() {
                 )}
               </div>
 
-              {/* DYNAMIC GREEN FOOTBALL PITCH CANVAS */}
               <div className="relative bg-emerald-900 border-2 border-emerald-500/60 rounded-xl p-3 min-h-[380px] flex flex-col justify-between shadow-inner overflow-hidden">
                 <div className="absolute inset-x-0 top-1/2 h-0.5 bg-emerald-500/30 -translate-y-1/2" />
                 <div className="absolute top-1/2 left-1/2 w-20 h-20 border border-emerald-500/30 rounded-full -translate-x-1/2 -translate-y-1/2" />
@@ -1004,7 +1063,6 @@ export default function MatchdayApp() {
                 <div className="absolute bottom-0 left-1/2 w-32 h-10 border-t border-x border-emerald-500/30 rounded-t-lg -translate-x-1/2" />
 
                 <div className="relative z-10 flex flex-col justify-between h-full min-h-[360px] py-1 gap-2">
-                  {/* Layer 1: Strikers */}
                   {strikers.length > 0 && (
                     <div className="flex justify-around items-center">
                       {strikers.map((player) => {
@@ -1028,7 +1086,6 @@ export default function MatchdayApp() {
                     </div>
                   )}
 
-                  {/* Layer 2: Midfielders */}
                   {midfielders.length > 0 && (
                     <div className="flex justify-around items-center">
                       {midfielders.map((player) => {
@@ -1052,7 +1109,6 @@ export default function MatchdayApp() {
                     </div>
                   )}
 
-                  {/* Layer 3: Defenders */}
                   {defenders.length > 0 && (
                     <div className="flex justify-around items-center">
                       {defenders.map((player) => {
@@ -1076,7 +1132,6 @@ export default function MatchdayApp() {
                     </div>
                   )}
 
-                  {/* Layer 4: Goalkeeper */}
                   <div className="flex justify-center items-center">
                     {goalkeepers.slice(0, 1).map((player) => {
                       const isSelected = selectedOnPitch === player.id;
@@ -1101,7 +1156,6 @@ export default function MatchdayApp() {
               </div>
             </div>
           ) : (
-            /* COMPACT CARDS VIEW */
             <div className="mb-6">
               <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-2 font-bold flex justify-between">
                 <span>On Pitch ({pitchPlayers.length}/{currentPitchCapacity})</span>
@@ -1162,7 +1216,6 @@ export default function MatchdayApp() {
             </div>
           )}
 
-          {/* Bench Section */}
           <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-6">
             <h2 className="text-xs uppercase tracking-widest text-amber-400 mb-2 font-bold flex justify-between">
               <span>Substitutes Bench ({subBench.length})</span>
@@ -1211,7 +1264,6 @@ export default function MatchdayApp() {
               })}
             </div>
 
-            {/* INJURED PLAYERS DRAWER */}
             {injuredPlayers.length > 0 && (
               <div className="mt-4 pt-3 border-t border-gray-800">
                 <h3 className="text-xs font-bold text-red-400 mb-2 uppercase tracking-wider flex justify-between items-center">
@@ -1238,7 +1290,6 @@ export default function MatchdayApp() {
             )}
           </div>
 
-          {/* WhatsApp & Save Match Section */}
           <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 flex flex-col gap-3">
             <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold">
               💾 Finish Match & Sync to Supabase
@@ -1280,12 +1331,135 @@ export default function MatchdayApp() {
         </div>
       )}
 
-      {/* TAB 2: FULL RESTORED PLANNER */}
+      {/* TAB 2: 🏋️ TRAINING ATTENDANCE & EFFORT RATING DRAWER */}
+      {activeTab === 'training' && (
+        <div>
+          <h1 className="text-xl font-black text-lime-400 mb-2">Midweek Training Tracker</h1>
+
+          <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4 flex justify-between items-center">
+            <div>
+              <label className="block text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1">
+                Session Date
+              </label>
+              <input
+                type="date"
+                value={sessionDate}
+                onChange={(e) => setSessionDate(e.target.value)}
+                className="bg-black border border-gray-800 text-lime-400 font-black text-xs rounded p-2 focus:outline-none"
+              />
+            </div>
+            <div className="text-right">
+              <span className="block text-[10px] text-gray-400 font-bold uppercase tracking-wider">Attendance Rate</span>
+              <span className="text-lg font-mono font-black text-lime-400">
+                {attendedCount}/{squad.length} ({Math.round((attendedCount / (squad.length || 1)) * 100)}%)
+              </span>
+            </div>
+          </div>
+
+          <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
+            <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold mb-3 flex justify-between items-center">
+              <span>📋 Attendance & Effort Ratings</span>
+              <span className="text-[10px] text-gray-400">1-5 Stars Focus/Effort</span>
+            </h2>
+
+            <div className="flex flex-col gap-3">
+              {squad.map((player) => {
+                const rec = trainingData[player.id] || {
+                  playerId: player.id,
+                  status: 'attended',
+                  effortRating: 5,
+                  notes: '',
+                };
+
+                return (
+                  <div key={player.id} className="p-3 bg-black rounded-xl border border-gray-800">
+                    <div className="flex justify-between items-center mb-2">
+                      <span className="font-extrabold text-sm text-white">
+                        #{player.squad_number} {player.name}
+                      </span>
+
+                      <div className="flex gap-1">
+                        <button
+                          onClick={() => handleTrainingStatusChange(player.id, 'attended')}
+                          className={`px-2 py-1 rounded text-[10px] font-black transition-all ${
+                            rec.status === 'attended'
+                              ? 'bg-emerald-500 text-black'
+                              : 'bg-gray-900 text-gray-400 border border-gray-800'
+                          }`}
+                        >
+                          PRESENT
+                        </button>
+                        <button
+                          onClick={() => handleTrainingStatusChange(player.id, 'absent')}
+                          className={`px-2 py-1 rounded text-[10px] font-black transition-all ${
+                            rec.status === 'absent'
+                              ? 'bg-red-500 text-white'
+                              : 'bg-gray-900 text-gray-400 border border-gray-800'
+                          }`}
+                        >
+                          ABSENT
+                        </button>
+                        <button
+                          onClick={() => handleTrainingStatusChange(player.id, 'excused')}
+                          className={`px-2 py-1 rounded text-[10px] font-black transition-all ${
+                            rec.status === 'excused'
+                              ? 'bg-amber-500 text-black'
+                              : 'bg-gray-900 text-gray-400 border border-gray-800'
+                          }`}
+                        >
+                          EXCUSED
+                        </button>
+                      </div>
+                    </div>
+
+                    {rec.status === 'attended' && (
+                      <div className="mt-2.5 pt-2.5 border-t border-gray-900 flex flex-col gap-2">
+                        <div className="flex justify-between items-center">
+                          <span className="text-[10px] text-gray-400 font-bold uppercase">Focus / Effort Rating:</span>
+                          <div className="flex gap-1">
+                            {[1, 2, 3, 4, 5].map((star) => (
+                              <button
+                                key={star}
+                                onClick={() => handleRatingChange(player.id, star)}
+                                className={`text-xs ${
+                                  star <= rec.effortRating ? 'text-amber-400 scale-110' : 'text-gray-700'
+                                }`}
+                              >
+                                ★
+                              </button>
+                            ))}
+                          </div>
+                        </div>
+
+                        <input
+                          type="text"
+                          placeholder="Drill notes (e.g. Sharp 1v1s, good positioning)"
+                          value={rec.notes}
+                          onChange={(e) => handleNotesChange(player.id, e.target.value)}
+                          className="w-full bg-gray-950 border border-gray-850 rounded p-2 text-[11px] text-gray-300 focus:outline-none focus:border-lime-400"
+                        />
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </div>
+
+          <button
+            onClick={applyTrainingToAvailability}
+            className="w-full bg-lime-500 hover:bg-lime-400 text-black font-black p-4 rounded-xl text-sm active:scale-95 transition-all shadow-lg mb-6"
+          >
+            ⚡ SYNC ATTENDED PLAYERS TO MATCHDAY PLANNER
+          </button>
+        </div>
+      )}
+
+      {/* TAB 3: PLANNER */}
       {activeTab === 'planner' && (
         <div>
           <h1 className="text-xl font-black text-lime-400 mb-2">Matchday Scheduler</h1>
 
-          {/* MATCH DURATION EDITOR CARD */}
           <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
             <label className="block text-xs font-bold text-lime-400 mb-2 uppercase tracking-wider">
               ⏱️ Match Half Duration ({halfMinutes}m per half = {halfMinutes * 2}m total)
@@ -1305,9 +1479,20 @@ export default function MatchdayApp() {
                 </button>
               ))}
             </div>
+            <div className="flex items-center gap-3 pt-2 border-t border-gray-800">
+              <span className="text-xs font-bold text-gray-400">Custom Half Duration:</span>
+              <div className="flex items-center gap-1">
+                <input
+                  type="number"
+                  value={halfMinutes}
+                  onChange={(e) => handleHalfMinutesChange(parseInt(e.target.value, 10) || 20)}
+                  className="bg-black border border-gray-800 rounded p-1.5 w-16 text-center text-xs font-bold text-lime-400 focus:outline-none focus:border-lime-400"
+                />
+                <span className="text-xs text-gray-400 font-bold">mins</span>
+              </div>
+            </div>
           </div>
 
-          {/* GOALKEEPER ROTATION STRATEGY CARD */}
           <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
             <label className="block text-xs font-bold text-lime-400 mb-2 uppercase tracking-wider">
               🧤 Goalkeeper Strategy
@@ -1401,7 +1586,6 @@ export default function MatchdayApp() {
             )}
           </div>
 
-          {/* TEAM AVAILABILITY SELECTION CARD */}
           <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
             <h2 className="text-xs uppercase tracking-widest text-gray-300 font-bold mb-3 flex justify-between">
               <span>Select Available Players ({availablePlayerIds.length}/{squad.length})</span>
@@ -1431,7 +1615,6 @@ export default function MatchdayApp() {
             </div>
           </div>
 
-          {/* CO-GAFFER RECOMMENDATION BANNER */}
           {availablePlayerIds.length > currentPitchCapacity && (
             <div className="bg-lime-500/10 border border-lime-500/40 p-3 rounded-xl mb-4 text-xs">
               <div className="flex items-center gap-2 mb-1">
@@ -1450,7 +1633,6 @@ export default function MatchdayApp() {
             </div>
           )}
 
-          {/* SUB FREQUENCY & BATCH SIZE CARD */}
           <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
             <div className="grid grid-cols-2 gap-3">
               <div>
@@ -1487,7 +1669,6 @@ export default function MatchdayApp() {
             </div>
           </div>
 
-          {/* PROJECTED MINUTES SUMMARY CARD */}
           {availablePlayerIds.length > 0 && (
             <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
               <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold mb-3 flex justify-between">
@@ -1522,12 +1703,11 @@ export default function MatchdayApp() {
         </div>
       )}
 
-      {/* TAB 3: EDITABLE TEAM ROSTER MANAGEMENT */}
+      {/* TAB 4: TEAM ROSTER MANAGEMENT */}
       {activeTab === 'squad' && (
         <div>
           <h1 className="text-xl font-black text-lime-400 mb-4">Team Roster Manager</h1>
 
-          {/* Add New Player Form */}
           <form onSubmit={handleAddPlayer} className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-6">
             <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-3 font-bold">Add New Player</h2>
             <div className="flex flex-col gap-3">
@@ -1536,7 +1716,7 @@ export default function MatchdayApp() {
                 placeholder="Player Name"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                className="bg-black border border-gray-800 rounded-lg p-3 text-white text-xs font-bold"
+                className="bg-black border border-gray-800 rounded-lg p-3 text-white focus:outline-none focus:border-lime-400 text-xs font-bold"
               />
               <div className="flex gap-2">
                 <input
@@ -1544,12 +1724,12 @@ export default function MatchdayApp() {
                   placeholder="Kit #"
                   value={newNumber}
                   onChange={(e) => setNewNumber(e.target.value)}
-                  className="bg-black border border-gray-800 rounded-lg p-3 text-white w-1/3 text-xs font-bold"
+                  className="bg-black border border-gray-800 rounded-lg p-3 text-white w-1/3 focus:outline-none focus:border-lime-400 text-xs font-bold"
                 />
                 <select
                   value={newPosition}
                   onChange={(e) => setNewPosition(e.target.value)}
-                  className="bg-black border border-gray-800 rounded-lg p-3 text-white w-2/3 text-xs font-bold"
+                  className="bg-black border border-gray-800 rounded-lg p-3 text-white w-2/3 focus:outline-none focus:border-lime-400 text-xs font-bold"
                 >
                   <option value="Goalkeeper">Goalkeeper</option>
                   <option value="Defender">Defender</option>
@@ -1566,7 +1746,6 @@ export default function MatchdayApp() {
             </div>
           </form>
 
-          {/* Editable Team Roster List */}
           <div className="bg-gray-900 p-4 rounded-xl border border-gray-800">
             <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-3 font-bold flex justify-between">
               <span>Active Roster ({squad.length})</span>
@@ -1673,7 +1852,7 @@ export default function MatchdayApp() {
         </div>
       )}
 
-      {/* TAB 4: SEASON EQUAL-TIME AUDIT & STATS DASHBOARD */}
+      {/* TAB 5: AUDIT & MATCH HISTORY */}
       {activeTab === 'stats' && (
         <div>
           <h1 className="text-xl font-black text-lime-400 mb-4">Season Equal-Time Audit</h1>
@@ -1744,6 +1923,14 @@ export default function MatchdayApp() {
           }`}
         >
           ⚽ MATCH
+        </button>
+        <button
+          onClick={() => setActiveTab('training')}
+          className={`flex-1 py-3 font-black text-xs rounded-lg transition-all ${
+            activeTab === 'training' ? 'bg-lime-500 text-black' : 'text-gray-400'
+          }`}
+        >
+          🏋️ DRILLS
         </button>
         <button
           onClick={() => setActiveTab('planner')}

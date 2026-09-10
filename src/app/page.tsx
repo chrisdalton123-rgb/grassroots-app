@@ -280,6 +280,13 @@ export default function MatchdayApp() {
     setActiveTab('matchday');
   };
 
+  const handleUpdateSubStepPosition = (stepId: string, newPosition: string) => {
+    triggerHaptic();
+    setGeneratedPlan((prev) =>
+      prev.map((step) => (step.id === stepId ? { ...step, assignedPosition: newPosition } : step))
+    );
+  };
+
   const getProjectedMinutes = () => {
     const active = squad.filter((p) => availablePlayerIds.includes(p.id));
     if (active.length === 0) return [];
@@ -496,7 +503,6 @@ export default function MatchdayApp() {
     if (!offP || !onP) return;
 
     triggerHaptic();
-
     const newStep: SubPlanStep = {
       id: Math.random().toString(),
       minute: planMinute,
@@ -508,7 +514,7 @@ export default function MatchdayApp() {
       status: 'pending',
     };
 
-    setGeneratedPlan((prev) => [...prev, newStep].sort((a, b) => a.minute - b.minute));
+    setGeneratedPlan((prev): SubPlanStep[] => [...prev, newStep].sort((a, b) => a.minute - b.minute));
   };
 
   const handleAddPlayer = async (e: React.FormEvent) => {
@@ -535,7 +541,7 @@ export default function MatchdayApp() {
       <div className="flex justify-between items-center mb-4 px-1">
         <h1 className="text-2xl font-black text-lime-400 flex items-center gap-2"><span>📋</span> CO-GAFFER</h1>
         <span className="text-[10px] bg-gray-900 border border-gray-800 text-lime-400 font-extrabold px-2.5 py-1 rounded-md">
-          PLANNER RESTORED
+          COMPLETE & READY
         </span>
       </div>
 
@@ -613,6 +619,7 @@ export default function MatchdayApp() {
           handleAddCustomSubStep={handleAddCustomSubStep}
           generatedPlan={generatedPlan}
           handleRemoveSubStep={(id) => setGeneratedPlan((prev) => prev.filter((s) => s.id !== id))}
+          handleUpdateSubStepPosition={handleUpdateSubStepPosition}
           availablePlayerIds={availablePlayerIds}
           togglePlayerAvailability={togglePlayerAvailability}
           startingPlayerIds={startingPlayerIds}

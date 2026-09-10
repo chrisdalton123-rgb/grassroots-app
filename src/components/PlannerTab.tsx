@@ -32,6 +32,8 @@ type Props = {
   getProjectedMinutes: () => (Player & { projectedMins: number })[];
   handleGenerateMatchPlan: () => void;
   currentPitchCapacity: number;
+  isGkLocked: boolean;
+  setIsGkLocked: (val: boolean) => void;
 };
 
 export default function PlannerTab(props: Props) {
@@ -80,6 +82,27 @@ export default function PlannerTab(props: Props) {
             <span className="text-gray-400 font-bold">mins</span>
           </div>
         </div>
+      </div>
+
+      {/* GOALKEEPER FULL MATCH LOCK TOGGLE */}
+      <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md flex justify-between items-center">
+        <div>
+          <span className="text-xs font-black text-lime-400 block">🧤 LOCK GOALKEEPER FULL MATCH</span>
+          <span className="text-[10px] text-gray-400 block mt-0.5">
+            {props.isGkLocked ? 'GK excluded from rotation loops' : 'GK rotates like outfield players'}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={() => props.setIsGkLocked(!props.isGkLocked)}
+          className={`px-3.5 py-2 font-black text-xs rounded-xl transition-all min-h-[40px] ${
+            props.isGkLocked
+              ? 'bg-lime-500 text-black border border-lime-400'
+              : 'bg-black text-gray-400 border border-gray-800'
+          }`}
+        >
+          {props.isGkLocked ? 'LOCKED (FULL MATCH)' : 'ROTATE GK'}
+        </button>
       </div>
 
       {/* AUTOMATED CALCULATION & EQUAL-TIME ENGINE */}
@@ -214,6 +237,88 @@ export default function PlannerTab(props: Props) {
           })}
         </div>
       </div>
+
+      {/* MANUAL SINGLE SUB STEP ENTRY */}
+      <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md">
+        <h2 className="text-xs font-black text-lime-400 uppercase tracking-wider mb-2">
+          ➕ Add Manual Scheduled Sub
+        </h2>
+        <div className="flex flex-col gap-2.5">
+          <div className="flex gap-2">
+            <select
+              value={props.planOffPlayerId}
+              onChange={(e) => props.setPlanOffPlayerId(e.target.value)}
+              className="bg-black border border-gray-800 text-xs font-bold text-white p-2.5 rounded-xl flex-1"
+            >
+              <option value="">Select OFF Player</option>
+              {activeSquad.map((p) => (
+                <option key={p.id} value={p.id}>#{p.squad_number} {p.name}</option>
+              ))}
+            </select>
+
+            <select
+              value={props.planOnPlayerId}
+              onChange={(e) => props.setPlanOnPlayerId(e.target.value)}
+              className="bg-black border border-gray-800 text-xs font-bold text-lime-400 p-2.5 rounded-xl flex-1"
+            >
+              <option value="">Select ON Player</option>
+              {activeSquad.map((p) => (
+                <option key={p.id} value={p.id}>#{p.squad_number} {p.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex gap-2 items-center">
+            <input
+              type="number"
+              value={props.planMinute}
+              onChange={(e) => props.setPlanMinute(parseInt(e.target.value, 10) || 1)}
+              className="bg-black border border-gray-800 text-xs font-bold text-amber-400 p-2.5 rounded-xl w-20 text-center"
+              placeholder="Min"
+            />
+
+            <select
+              value={props.planTargetPos}
+              onChange={(e) => props.setPlanTargetPos(e.target.value)}
+              className="bg-black border border-gray-800 text-xs font-bold text-white p-2.5 rounded-xl flex-1"
+            >
+              {props.positionSlots.map((pos) => (
+                <option key={pos} value={pos}>Target Pos: {pos}</option>
+              ))}
+            </select>
+
+            <button
+              type="button"
+              onClick={props.handleAddCustomSubStep}
+              className="bg-lime-500 text-black font-black px-4 py-2.5 rounded-xl text-xs"
+            >
+              + ADD
+            </button>
+          </div>
+        </div>
+      </div>
+
+      {/* PROJECTED MINUTES BREAKDOWN */}
+      {props.availablePlayerIds.length > 0 && (
+        <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md">
+          <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold mb-3 flex justify-between">
+            <span>📊 Projected Playing Time</span>
+            <span>{totalMatchMinutes}m Match</span>
+          </h2>
+          <div className="grid grid-cols-2 gap-2">
+            {props.getProjectedMinutes().map((player) => (
+              <div key={player.id} className="p-3 bg-black rounded-xl border border-gray-800 flex justify-between items-center text-xs">
+                <span className="font-bold text-gray-300 truncate max-w-[100px]">
+                  #{player.squad_number} {player.name}
+                </span>
+                <span className="font-mono font-extrabold text-lime-400 shrink-0">
+                  {player.projectedMins}m
+                </span>
+              </div>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   );
 }

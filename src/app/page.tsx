@@ -72,6 +72,7 @@ export default function MatchdayApp() {
   const [availablePlayerIds, setAvailablePlayerIds] = useState<string[]>([]);
   const [startingPlayerIds, setStartingPlayerIds] = useState<string[]>([]);
   const [fixedGkId, setFixedGkId] = useState<string | null>(null);
+  const [isGkLocked, setIsGkLocked] = useState<boolean>(true);
   const [rotationIntervalMins, setRotationIntervalMins] = useState<number>(7);
   const [subsPerBatch, setSubsPerBatch] = useState<number>(1);
   const [generatedPlan, setGeneratedPlan] = useState<SubPlanStep[]>([]);
@@ -246,8 +247,11 @@ export default function MatchdayApp() {
     const plan: SubPlanStep[] = [];
     const totalMatchMins = halfMinutes * 2;
 
-    let currentOutfieldPitch = [...starterPitch.filter((p) => p.id !== fixedGkId)];
-    let currentBench = [...benchPlayers];
+    const gkPlayer = starterPitch.find((p) => p.current_position === 'GK' || p.id === fixedGkId);
+    const gkIdToExclude = isGkLocked && gkPlayer ? gkPlayer.id : null;
+
+    let currentOutfieldPitch = [...starterPitch.filter((p) => p.id !== gkIdToExclude)];
+    let currentBench = [...benchPlayers.filter((p) => p.id !== gkIdToExclude)];
     let interval = rotationIntervalMins;
 
     while (interval < totalMatchMins) {
@@ -503,6 +507,7 @@ export default function MatchdayApp() {
     if (!offP || !onP) return;
 
     triggerHaptic();
+
     const newStep: SubPlanStep = {
       id: Math.random().toString(),
       minute: planMinute,
@@ -541,7 +546,7 @@ export default function MatchdayApp() {
       <div className="flex justify-between items-center mb-4 px-1">
         <h1 className="text-2xl font-black text-lime-400 flex items-center gap-2"><span>📋</span> CO-GAFFER</h1>
         <span className="text-[10px] bg-gray-900 border border-gray-800 text-lime-400 font-extrabold px-2.5 py-1 rounded-md">
-          COMPLETE & READY
+          GK LOCK & AUTO-PLAN READY
         </span>
       </div>
 
@@ -632,6 +637,8 @@ export default function MatchdayApp() {
           getProjectedMinutes={getProjectedMinutes}
           handleGenerateMatchPlan={handleGenerateMatchPlan}
           currentPitchCapacity={currentPitchCapacity}
+          isGkLocked={isGkLocked}
+          setIsGkLocked={setIsGkLocked}
         />
       )}
 

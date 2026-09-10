@@ -23,7 +23,7 @@ type Player = {
 type TrainingRecord = {
   playerId: string;
   status: 'attended' | 'absent' | 'excused';
-  effortRating: number; // 1 to 5
+  effortRating: number;
   notes: string;
 };
 
@@ -247,7 +247,7 @@ export default function MatchdayApp() {
       const avail = formatted.map((p) => p.id);
       setAvailablePlayerIds(avail);
       setStartingPlayerIds(avail.slice(0, currentPitchCapacity));
-      
+
       const initialTraining: Record<string, TrainingRecord> = {};
       formatted.forEach((p) => {
         initialTraining[p.id] = {
@@ -925,19 +925,19 @@ export default function MatchdayApp() {
   const attendedCount = squad.filter((p) => trainingData[p.id]?.status === 'attended').length;
 
   return (
-    <div className="bg-black text-white min-h-screen pb-20 p-4 font-sans select-none max-w-md mx-auto">
+    <div className="bg-black text-white min-h-screen pb-24 p-4 font-sans select-none max-w-md mx-auto">
       {/* BRANDING HEADER */}
-      <div className="flex justify-between items-center mb-3 px-1">
-        <h1 className="text-xl font-black text-lime-400 tracking-tight flex items-center gap-1.5">
+      <div className="flex justify-between items-center mb-4 px-1">
+        <h1 className="text-2xl font-black text-lime-400 tracking-tight flex items-center gap-2">
           <span>📋</span> CO-GAFFER
         </h1>
         <div className="flex items-center gap-2">
           {wakeLock && (
-            <span className="text-[10px] bg-lime-500/20 text-lime-400 border border-lime-500/40 px-2 py-0.5 rounded font-bold">
+            <span className="text-[10px] bg-lime-500/20 text-lime-400 border border-lime-500/40 px-2 py-1 rounded-md font-bold">
               🔒 AWAKE
             </span>
           )}
-          <span className="text-[10px] bg-gray-900 border border-gray-800 text-lime-400 font-extrabold px-2 py-0.5 rounded tracking-wider uppercase">
+          <span className="text-[10px] bg-gray-900 border border-gray-800 text-lime-400 font-extrabold px-2.5 py-1 rounded-md tracking-wider uppercase shadow-inner">
             ASSISTANT COACH
           </span>
         </div>
@@ -946,12 +946,13 @@ export default function MatchdayApp() {
       {/* TAB 1: MATCHDAY TOUCHLINE */}
       {activeTab === 'matchday' && (
         <div>
-          <div className="bg-gray-950 p-2.5 rounded-xl mb-3 border border-gray-850 flex flex-col gap-2">
-            <div className="flex justify-between items-center">
+          {/* FORMAT BAR */}
+          <div className="bg-gray-900/90 p-3 rounded-2xl mb-4 border border-gray-800 shadow-md flex flex-col gap-2.5">
+            <div className="flex justify-between items-center gap-2">
               <select
                 value={ageGroup}
                 onChange={(e) => applyAgePreset(e.target.value)}
-                className="bg-black border border-gray-800 text-lime-400 font-black text-xs rounded p-2 focus:outline-none focus:border-lime-400 flex-1 mr-2"
+                className="bg-black border border-gray-800 text-lime-400 font-black text-xs rounded-xl p-2.5 focus:outline-none focus:border-lime-400 flex-1 min-h-[44px]"
               >
                 {Object.keys(AGE_PRESETS).map((key) => (
                   <option key={key} value={key}>
@@ -962,54 +963,55 @@ export default function MatchdayApp() {
 
               <button
                 onClick={() => setViewMode(viewMode === 'pitch' ? 'cards' : 'pitch')}
-                className="text-[10px] bg-lime-500 text-black font-extrabold px-2.5 py-2 rounded shadow shrink-0 mr-1.5"
+                className="text-[11px] bg-lime-500 text-black font-extrabold px-3 py-2.5 rounded-xl shadow active:scale-95 transition-all shrink-0 min-h-[44px] flex items-center"
               >
                 {viewMode === 'pitch' ? '🎴 CARDS' : '🏟️ BOARD'}
               </button>
 
               <button
                 onClick={() => setShowSettings(!showSettings)}
-                className="text-xs bg-gray-900 border border-gray-800 text-gray-300 font-bold px-2 py-2 rounded"
+                className="text-xs bg-gray-950 border border-gray-800 text-gray-300 font-bold px-3 py-2.5 rounded-xl min-h-[44px] flex items-center"
               >
                 ⚙️
               </button>
             </div>
 
             {showSettings && (
-              <div className="pt-2 border-t border-gray-850 flex justify-between items-center text-xs">
+              <div className="pt-2.5 border-t border-gray-800 flex justify-between items-center text-xs">
                 <div>
-                  <span className="text-gray-400 block text-[10px]">PITCH SEATS:</span>
+                  <span className="text-gray-400 block text-[10px] font-bold">PITCH SEATS:</span>
                   <input
                     type="number"
                     value={basePitchCapacity}
                     onChange={(e) => setBasePitchCapacity(parseInt(e.target.value, 10) || 5)}
-                    className="bg-black border border-gray-800 text-lime-400 font-bold p-1 w-12 text-center rounded"
+                    className="bg-black border border-gray-800 text-lime-400 font-bold p-1.5 w-14 text-center rounded-lg mt-0.5"
                   />
                 </div>
                 <div>
-                  <span className="text-gray-400 block text-[10px]">HALF MINS:</span>
+                  <span className="text-gray-400 block text-[10px] font-bold">HALF MINS:</span>
                   <input
                     type="number"
                     value={halfMinutes}
                     onChange={(e) => handleHalfMinutesChange(parseInt(e.target.value, 10) || 20)}
-                    className="bg-black border border-gray-800 text-lime-400 font-bold p-1 w-12 text-center rounded"
+                    className="bg-black border border-gray-800 text-lime-400 font-bold p-1.5 w-14 text-center rounded-lg mt-0.5"
                   />
                 </div>
               </div>
             )}
           </div>
 
+          {/* FA POWERPLAY BANNER */}
           {(goalDifference >= 4 || isPowerplayActive) && (
-            <div className="bg-purple-950 border border-purple-500/50 p-3 rounded-xl mb-3 flex justify-between items-center">
+            <div className="bg-purple-950/80 border border-purple-500/50 p-3.5 rounded-2xl mb-4 flex justify-between items-center shadow-lg">
               <div>
-                <span className="text-xs font-extrabold text-purple-300 block">⚡ FA POWERPLAY RULE</span>
-                <span className="text-[10px] text-gray-300">
+                <span className="text-xs font-black text-purple-300 block">⚡ FA POWERPLAY RULE</span>
+                <span className="text-[11px] text-gray-300">
                   {isPowerplayActive ? 'Extra player active (+1 pitch seat)' : '4+ goals behind! Add extra player'}
                 </span>
               </div>
               <button
                 onClick={togglePowerplay}
-                className={`px-3 py-1.5 font-black text-xs rounded-lg transition-all ${
+                className={`px-3.5 py-2 font-black text-xs rounded-xl transition-all min-h-[44px] ${
                   isPowerplayActive ? 'bg-purple-400 text-black' : 'bg-purple-600 text-white'
                 }`}
               >
@@ -1018,23 +1020,24 @@ export default function MatchdayApp() {
             </div>
           )}
 
-          <div className="bg-gray-900 p-4 rounded-xl mb-4 border border-gray-800">
+          {/* SCOREBOARD & CLOCK HEADER */}
+          <div className="bg-gray-900/90 p-4 rounded-2xl mb-4 border border-gray-800 shadow-md">
             <div className="flex justify-between items-center mb-3 pb-3 border-b border-gray-800">
-              <div className="flex items-center gap-3">
+              <div className="flex items-center gap-4">
                 <div className="text-center">
                   <span className="text-[10px] text-gray-400 font-bold block uppercase">OUR TEAM</span>
-                  <span className="text-2xl font-black text-lime-400 font-mono">{ourGoalsCount}</span>
+                  <span className="text-3xl font-black text-lime-400 font-mono">{ourGoalsCount}</span>
                 </div>
-                <span className="text-gray-600 font-black text-lg">-</span>
+                <span className="text-gray-600 font-black text-xl">-</span>
                 <div className="text-center">
-                  <span className="text-[10px] text-gray-400 font-bold block uppercase truncate max-w-[70px]">{opponentName}</span>
-                  <span className="text-2xl font-black text-red-400 font-mono">{opponentGoalsCount}</span>
+                  <span className="text-[10px] text-gray-400 font-bold block uppercase truncate max-w-[80px]">{opponentName}</span>
+                  <span className="text-3xl font-black text-red-400 font-mono">{opponentGoalsCount}</span>
                 </div>
               </div>
 
               <button
                 onClick={() => handleLogGoal(opponentName, true)}
-                className="px-2.5 py-1.5 bg-red-500/20 text-red-400 border border-red-500/40 rounded font-black text-[10px] active:scale-95"
+                className="px-3 py-2 bg-red-500/20 text-red-400 border border-red-500/40 rounded-xl font-black text-xs active:scale-95 transition-all min-h-[44px]"
               >
                 + OPPONENT GOAL
               </button>
@@ -1045,13 +1048,13 @@ export default function MatchdayApp() {
                 <span className="text-xs text-gray-400 block font-bold uppercase tracking-wider">
                   {ageGroup === 'U7' ? `Mini-Game ${currentPeriod}` : `Half ${currentPeriod}`} — Live
                 </span>
-                <h1 className="text-2xl font-black text-lime-400 font-mono tracking-tight">
+                <h1 className="text-3xl font-black text-lime-400 font-mono tracking-tight">
                   {formatTime(secondsRemaining)}
                 </h1>
               </div>
               <button
                 onClick={toggleClock}
-                className={`px-5 py-3 font-black text-sm rounded-lg active:scale-95 transition-all ${
+                className={`px-6 py-3.5 font-black text-sm rounded-xl active:scale-95 transition-all shadow-md min-h-[48px] ${
                   isClockRunning ? 'bg-red-500 text-white' : 'bg-lime-500 text-black'
                 }`}
               >
@@ -1060,15 +1063,16 @@ export default function MatchdayApp() {
             </div>
           </div>
 
+          {/* PRE-PLANNED SUBS WIDGET */}
           {pendingPlanSteps.length > 0 && (
-            <div className="bg-gray-900 p-3.5 rounded-xl border border-lime-500/40 mb-4">
+            <div className="bg-gray-900/90 p-3.5 rounded-2xl border border-lime-500/40 mb-4 shadow-md">
               <h3 className="text-xs font-black text-lime-400 mb-2 uppercase tracking-wider flex justify-between items-center">
                 <span>⏱️ Upcoming Pre-Planned Subs ({pendingPlanSteps.length})</span>
                 <span className="text-[10px] text-gray-400 font-normal">Tap to execute</span>
               </h3>
               <div className="flex gap-2 overflow-x-auto pb-1 text-xs">
                 {pendingPlanSteps.map((step) => (
-                  <div key={step.id} className="bg-black border border-lime-500/30 p-2.5 rounded-lg shrink-0 min-w-[140px] flex flex-col justify-between">
+                  <div key={step.id} className="bg-black border border-lime-500/30 p-2.5 rounded-xl shrink-0 min-w-[145px] flex flex-col justify-between">
                     <div>
                       <span className="text-[10px] font-mono text-lime-400 font-bold block mb-1">MIN {step.minute}'</span>
                       <span className="text-red-400 block font-bold text-[11px]">OFF: {step.offPlayerName}</span>
@@ -1076,7 +1080,7 @@ export default function MatchdayApp() {
                     </div>
                     <button
                       onClick={() => handleApplyScheduledSub(step.id)}
-                      className="w-full bg-lime-500 hover:bg-lime-400 text-black font-black py-1.5 rounded text-[10px] active:scale-95 shadow transition-all"
+                      className="w-full bg-lime-500 hover:bg-lime-400 text-black font-black py-2 rounded-lg text-[10px] active:scale-95 shadow transition-all min-h-[36px]"
                     >
                       ⚡ EXECUTE SUB
                     </button>
@@ -1086,17 +1090,18 @@ export default function MatchdayApp() {
             </div>
           )}
 
+          {/* REFINED PITCH BOARD VIEW */}
           {viewMode === 'pitch' ? (
-            <div className="mb-6 bg-gray-900 p-3.5 rounded-2xl border border-gray-800">
+            <div className="mb-6 bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md">
               <div className="flex justify-between items-center mb-3">
-                <span className="text-xs uppercase tracking-widest text-lime-400 font-bold">
+                <span className="text-xs uppercase tracking-widest text-lime-400 font-extrabold">
                   🏟️ Tactical Pitch ({pitchPlayers.length}/{currentPitchCapacity})
                 </span>
                 {activeFormations.length > 0 && (
                   <select
                     value={formationIndex}
                     onChange={(e) => setFormationIndex(parseInt(e.target.value, 10))}
-                    className="bg-black border border-gray-800 text-lime-400 font-bold text-[10px] rounded px-2 py-1"
+                    className="bg-black border border-gray-800 text-lime-400 font-bold text-[10px] rounded-lg px-2.5 py-1.5 focus:outline-none"
                   >
                     {activeFormations.map((f, i) => (
                       <option key={i} value={i}>{f.label}</option>
@@ -1105,13 +1110,15 @@ export default function MatchdayApp() {
                 )}
               </div>
 
-              <div className="relative bg-emerald-900 border-2 border-emerald-500/60 rounded-xl p-3 min-h-[380px] flex flex-col justify-between shadow-inner overflow-hidden">
-                <div className="absolute inset-x-0 top-1/2 h-0.5 bg-emerald-500/30 -translate-y-1/2" />
-                <div className="absolute top-1/2 left-1/2 w-20 h-20 border border-emerald-500/30 rounded-full -translate-x-1/2 -translate-y-1/2" />
-                <div className="absolute top-0 left-1/2 w-32 h-10 border-b border-x border-emerald-500/30 rounded-b-lg -translate-x-1/2" />
-                <div className="absolute bottom-0 left-1/2 w-32 h-10 border-t border-x border-emerald-500/30 rounded-t-lg -translate-x-1/2" />
+              {/* HIGH-CONTRAST PITCH CANVAS */}
+              <div className="relative bg-emerald-800 border-2 border-emerald-400/80 rounded-2xl p-3 min-h-[400px] flex flex-col justify-between shadow-inner overflow-hidden">
+                <div className="absolute inset-x-0 top-1/2 h-0.5 bg-emerald-400/40 -translate-y-1/2" />
+                <div className="absolute top-1/2 left-1/2 w-24 h-24 border-2 border-emerald-400/40 rounded-full -translate-x-1/2 -translate-y-1/2" />
+                <div className="absolute top-0 left-1/2 w-36 h-12 border-b-2 border-x-2 border-emerald-400/40 rounded-b-xl -translate-x-1/2" />
+                <div className="absolute bottom-0 left-1/2 w-36 h-12 border-t-2 border-x-2 border-emerald-400/40 rounded-t-xl -translate-x-1/2" />
 
-                <div className="relative z-10 flex flex-col justify-between h-full min-h-[360px] py-1 gap-2">
+                <div className="relative z-10 flex flex-col justify-between h-full min-h-[380px] py-1 gap-2">
+                  {/* Strikers */}
                   {strikers.length > 0 && (
                     <div className="flex justify-around items-center">
                       {strikers.map((player) => {
@@ -1123,18 +1130,25 @@ export default function MatchdayApp() {
                               triggerHaptic();
                               setSelectedOnPitch(isSelected ? null : player.id);
                             }}
-                            className={`p-2 rounded-xl text-center transition-all border ${
-                              isSelected ? 'bg-yellow-400 text-black border-yellow-200 scale-105 shadow-xl' : 'bg-black/80 border-lime-400/50 text-white'
+                            className={`p-2.5 rounded-2xl text-center transition-all border-2 min-h-[52px] ${
+                              isSelected
+                                ? 'bg-yellow-400 text-black border-yellow-200 scale-105 shadow-2xl'
+                                : 'bg-black/90 border-lime-400 text-white shadow-lg'
                             }`}
                           >
-                            <span className="text-[10px] font-black block">#{player.squad_number} {player.name} {player.isStarter ? '🚨' : ''}</span>
-                            <span className="text-[9px] font-mono text-lime-300">STR • {formatPlayerMins(player.seconds_played)}</span>
+                            <span className="text-xs font-black block">
+                              #{player.squad_number} {player.name} {player.isStarter ? '🚨' : ''}
+                            </span>
+                            <span className="text-[9px] font-mono text-lime-300 font-bold">
+                              STR • {formatPlayerMins(player.seconds_played)}
+                            </span>
                           </button>
                         );
                       })}
                     </div>
                   )}
 
+                  {/* Midfielders */}
                   {midfielders.length > 0 && (
                     <div className="flex justify-around items-center">
                       {midfielders.map((player) => {
@@ -1146,18 +1160,25 @@ export default function MatchdayApp() {
                               triggerHaptic();
                               setSelectedOnPitch(isSelected ? null : player.id);
                             }}
-                            className={`p-2 rounded-xl text-center transition-all border ${
-                              isSelected ? 'bg-yellow-400 text-black border-yellow-200 scale-105 shadow-xl' : 'bg-black/80 border-lime-400/50 text-white'
+                            className={`p-2.5 rounded-2xl text-center transition-all border-2 min-h-[52px] ${
+                              isSelected
+                                ? 'bg-yellow-400 text-black border-yellow-200 scale-105 shadow-2xl'
+                                : 'bg-black/90 border-lime-400 text-white shadow-lg'
                             }`}
                           >
-                            <span className="text-[10px] font-black block">#{player.squad_number} {player.name} {player.isStarter ? '🚨' : ''}</span>
-                            <span className="text-[9px] font-mono text-lime-300">MID • {formatPlayerMins(player.seconds_played)}</span>
+                            <span className="text-xs font-black block">
+                              #{player.squad_number} {player.name} {player.isStarter ? '🚨' : ''}
+                            </span>
+                            <span className="text-[9px] font-mono text-lime-300 font-bold">
+                              MID • {formatPlayerMins(player.seconds_played)}
+                            </span>
                           </button>
                         );
                       })}
                     </div>
                   )}
 
+                  {/* Defenders */}
                   {defenders.length > 0 && (
                     <div className="flex justify-around items-center">
                       {defenders.map((player) => {
@@ -1169,18 +1190,25 @@ export default function MatchdayApp() {
                               triggerHaptic();
                               setSelectedOnPitch(isSelected ? null : player.id);
                             }}
-                            className={`p-2 rounded-xl text-center transition-all border ${
-                              isSelected ? 'bg-yellow-400 text-black border-yellow-200 scale-105 shadow-xl' : 'bg-black/80 border-lime-400/50 text-white'
+                            className={`p-2.5 rounded-2xl text-center transition-all border-2 min-h-[52px] ${
+                              isSelected
+                                ? 'bg-yellow-400 text-black border-yellow-200 scale-105 shadow-2xl'
+                                : 'bg-black/90 border-lime-400 text-white shadow-lg'
                             }`}
                           >
-                            <span className="text-[10px] font-black block">#{player.squad_number} {player.name} {player.isStarter ? '🚨' : ''}</span>
-                            <span className="text-[9px] font-mono text-lime-300">DEF • {formatPlayerMins(player.seconds_played)}</span>
+                            <span className="text-xs font-black block">
+                              #{player.squad_number} {player.name} {player.isStarter ? '🚨' : ''}
+                            </span>
+                            <span className="text-[9px] font-mono text-lime-300 font-bold">
+                              DEF • {formatPlayerMins(player.seconds_played)}
+                            </span>
                           </button>
                         );
                       })}
                     </div>
                   )}
 
+                  {/* Goalkeeper */}
                   <div className="flex justify-center items-center">
                     {goalkeepers.slice(0, 1).map((player) => {
                       const isSelected = selectedOnPitch === player.id;
@@ -1191,12 +1219,18 @@ export default function MatchdayApp() {
                             triggerHaptic();
                             setSelectedOnPitch(isSelected ? null : player.id);
                           }}
-                          className={`p-2 rounded-xl text-center transition-all border ${
-                            isSelected ? 'bg-yellow-400 text-black border-yellow-200 scale-105 shadow-xl' : 'bg-black/90 border-lime-400 text-white'
+                          className={`p-2.5 rounded-2xl text-center transition-all border-2 min-h-[52px] ${
+                            isSelected
+                              ? 'bg-yellow-400 text-black border-yellow-200 scale-105 shadow-2xl'
+                              : 'bg-black/95 border-lime-400 text-white shadow-lg'
                           }`}
                         >
-                          <span className="text-[10px] font-black block">🧤 #{player.squad_number} {player.name} {player.isStarter ? '🚨' : ''}</span>
-                          <span className="text-[9px] font-mono text-lime-300">GK • {formatPlayerMins(player.seconds_played)}</span>
+                          <span className="text-xs font-black block">
+                            🧤 #{player.squad_number} {player.name} {player.isStarter ? '🚨' : ''}
+                          </span>
+                          <span className="text-[9px] font-mono text-lime-300 font-bold">
+                            GK • {formatPlayerMins(player.seconds_played)}
+                          </span>
                         </button>
                       );
                     })}
@@ -1205,10 +1239,11 @@ export default function MatchdayApp() {
               </div>
             </div>
           ) : (
+            /* COMPACT CARDS VIEW */
             <div className="mb-6">
               <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-2 font-bold flex justify-between">
                 <span>On Pitch ({pitchPlayers.length}/{currentPitchCapacity})</span>
-                {isPowerplayActive && <span className="text-purple-400">⚡ POWERPLAY (+1)</span>}
+                {isPowerplayActive && <span className="text-purple-400 font-bold">⚡ POWERPLAY (+1)</span>}
               </h2>
               <div className="grid grid-cols-2 gap-3">
                 {pitchPlayers.map((player) => {
@@ -1222,7 +1257,7 @@ export default function MatchdayApp() {
                           triggerHaptic();
                           setSelectedOnPitch(isSelected ? null : player.id);
                         }}
-                        className={`w-full p-3.5 rounded-xl border-2 text-left transition-all relative ${
+                        className={`w-full p-3.5 rounded-2xl border-2 text-left transition-all relative ${
                           isSelected
                             ? 'bg-yellow-500 border-yellow-300 text-black scale-102 shadow-lg'
                             : isFixedGk
@@ -1231,7 +1266,7 @@ export default function MatchdayApp() {
                         }`}
                       >
                         <div className="flex justify-between items-center mb-1">
-                          <span className="font-extrabold text-base">
+                          <span className="font-black text-base">
                             #{player.squad_number} {player.name}
                           </span>
                           <div className="flex gap-1">
@@ -1241,7 +1276,7 @@ export default function MatchdayApp() {
                               </span>
                             )}
                             <span className={`text-xs px-2 py-0.5 rounded font-black ${isSelected ? 'bg-black text-yellow-500' : isFixedGk ? 'bg-lime-500 text-black' : 'bg-gray-800 text-lime-400'}`}>
-                              {isFixedGk ? 'GK (LOCKED)' : player.current_position}
+                              {isFixedGk ? 'GK' : player.current_position}
                             </span>
                           </div>
                         </div>
@@ -1251,18 +1286,18 @@ export default function MatchdayApp() {
                         </div>
                       </button>
 
-                      <div className="flex gap-1 mt-1">
+                      <div className="flex gap-1.5 mt-1.5">
                         <button
                           onClick={() => handleLogGoal(player.name, false)}
-                          className="flex-1 bg-gray-950 hover:bg-lime-500 hover:text-black border border-gray-800 text-gray-300 text-[10px] font-bold py-1 rounded transition-all"
+                          className="flex-1 bg-gray-950 hover:bg-lime-500 hover:text-black border border-gray-800 text-gray-300 text-[10px] font-bold py-2 rounded-xl transition-all min-h-[38px]"
                         >
                           ⚽ GOAL
                         </button>
                         <button
                           onClick={() => handleMarkInjured(player.id)}
-                          className="bg-red-950 hover:bg-red-600 text-red-300 hover:text-white border border-red-800 text-[10px] font-bold px-2 py-1 rounded transition-all"
+                          className="bg-red-950/80 hover:bg-red-600 text-red-300 hover:text-white border border-red-800 text-[10px] font-bold px-3 py-2 rounded-xl transition-all min-h-[38px]"
                         >
-                          🏥 INJURY
+                          🏥
                         </button>
                       </div>
                     </div>
@@ -1272,12 +1307,13 @@ export default function MatchdayApp() {
             </div>
           )}
 
-          <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-6">
-            <h2 className="text-xs uppercase tracking-widest text-amber-400 mb-2 font-bold flex justify-between">
+          {/* SUB BENCH */}
+          <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 mb-6 shadow-md">
+            <h2 className="text-xs uppercase tracking-widest text-amber-400 mb-3 font-bold flex justify-between">
               <span>Substitutes Bench ({subBench.length})</span>
               <span className="text-lime-400">⭐ Priority Sub</span>
             </h2>
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2.5">
               {subBench.map((player) => {
                 const isLowest = player.seconds_played === lowestSeconds;
 
@@ -1286,9 +1322,9 @@ export default function MatchdayApp() {
                     <button
                       disabled={!selectedOnPitch}
                       onClick={() => handleSubSwap(player.id)}
-                      className={`flex-1 p-3.5 rounded-xl flex justify-between items-center text-left border transition-all ${
+                      className={`flex-1 p-3.5 rounded-2xl flex justify-between items-center text-left border transition-all min-h-[48px] ${
                         selectedOnPitch
-                          ? 'bg-amber-500/10 border-amber-500 text-amber-200 active:bg-amber-500 active:text-black'
+                          ? 'bg-amber-500/20 border-amber-500 text-amber-200 active:bg-amber-500 active:text-black'
                           : isLowest
                           ? 'bg-gray-950 border-lime-500/50 text-gray-300'
                           : 'bg-gray-950 border-gray-800 text-gray-500'
@@ -1304,14 +1340,14 @@ export default function MatchdayApp() {
                       {selectedOnPitch ? (
                         <span className="font-black text-xs">SUB ON →</span>
                       ) : isLowest ? (
-                        <span className="bg-lime-500/20 text-lime-400 border border-lime-500/40 text-[10px] px-2 py-0.5 rounded font-bold">
+                        <span className="bg-lime-500/20 text-lime-400 border border-lime-500/40 text-[10px] px-2 py-1 rounded-md font-bold">
                           LOWEST MINS
                         </span>
                       ) : null}
                     </button>
                     <button
                       onClick={() => handleMarkInjured(player.id)}
-                      className="bg-red-950 border border-red-800 text-red-400 font-bold px-2.5 rounded-xl text-xs"
+                      className="bg-red-950/80 border border-red-800 text-red-400 font-bold px-3 rounded-2xl text-xs min-h-[48px]"
                     >
                       🏥
                     </button>
@@ -1320,24 +1356,25 @@ export default function MatchdayApp() {
               })}
             </div>
 
+            {/* INJURED PLAYERS DRAWER */}
             {injuredPlayers.length > 0 && (
               <div className="mt-4 pt-3 border-t border-gray-800">
                 <h3 className="text-xs font-bold text-red-400 mb-2 uppercase tracking-wider flex justify-between items-center">
                   <span>🏥 Injured / Resting ({injuredPlayers.length})</span>
                   <span className="text-[10px] text-gray-400">Tap to return to play</span>
                 </h3>
-                <div className="flex flex-col gap-1.5">
+                <div className="flex flex-col gap-2">
                   {injuredPlayers.map((player) => (
-                    <div key={player.id} className="p-2.5 bg-black rounded-lg border border-red-900/50 flex justify-between items-center text-xs">
+                    <div key={player.id} className="p-3 bg-black rounded-xl border border-red-900/50 flex justify-between items-center text-xs">
                       <div>
                         <span className="font-bold text-gray-300">#{player.squad_number} {player.name}</span>
                         <span className="ml-2 font-mono text-[10px] text-gray-500">{formatPlayerMins(player.seconds_played)}</span>
                       </div>
                       <button
                         onClick={() => handleRecoverPlayer(player.id)}
-                        className="bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500 hover:text-black font-extrabold text-[10px] px-2.5 py-1 rounded transition-all"
+                        className="bg-emerald-500/20 border border-emerald-500/40 text-emerald-400 hover:bg-emerald-500 hover:text-black font-extrabold text-[10px] px-3 py-1.5 rounded-lg transition-all"
                       >
-                        ✓ RECOVERED / SUB ON
+                        ✓ RECOVERED
                       </button>
                     </div>
                   ))}
@@ -1346,7 +1383,8 @@ export default function MatchdayApp() {
             )}
           </div>
 
-          <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 flex flex-col gap-3">
+          {/* SAVE & WHATSAPP SECTION */}
+          <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 flex flex-col gap-3 shadow-md">
             <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold">
               💾 Finish Match & Sync to Supabase
             </h2>
@@ -1355,12 +1393,12 @@ export default function MatchdayApp() {
               placeholder="Opponent Name"
               value={opponentName}
               onChange={(e) => setOpponentName(e.target.value)}
-              className="bg-black border border-gray-800 rounded p-2.5 text-xs text-white"
+              className="bg-black border border-gray-800 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-lime-400 min-h-[44px]"
             />
             <select
               value={playerOfTheMatch || ''}
               onChange={(e) => setPlayerOfTheMatch(e.target.value || null)}
-              className="bg-black border border-gray-800 rounded p-2.5 text-xs text-white"
+              className="bg-black border border-gray-800 rounded-xl p-3 text-xs text-white focus:outline-none focus:border-lime-400 min-h-[44px]"
             >
               <option value="">Select Star Player of the Match</option>
               {[...pitchPlayers, ...subBench, ...injuredPlayers].map((p) => (
@@ -1368,17 +1406,17 @@ export default function MatchdayApp() {
               ))}
             </select>
 
-            <div className="flex gap-2">
+            <div className="flex gap-2.5">
               <button
                 onClick={generateWhatsAppSummary}
-                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-black p-3 rounded-xl text-xs active:scale-95 transition-all"
+                className="flex-1 bg-emerald-600 hover:bg-emerald-500 text-white font-black p-3.5 rounded-xl text-xs active:scale-95 transition-all min-h-[48px]"
               >
                 💬 WHATSAPP RECAP
               </button>
               <button
                 onClick={handleSaveAndFinishMatch}
                 disabled={savingMatch}
-                className="flex-1 bg-lime-500 hover:bg-lime-400 text-black font-black p-3 rounded-xl text-xs active:scale-95 transition-all disabled:opacity-50"
+                className="flex-1 bg-lime-500 hover:bg-lime-400 text-black font-black p-3.5 rounded-xl text-xs active:scale-95 transition-all disabled:opacity-50 min-h-[48px]"
               >
                 {savingMatch ? 'SAVING...' : '💾 SAVE TO DATABASE'}
               </button>
@@ -1387,12 +1425,12 @@ export default function MatchdayApp() {
         </div>
       )}
 
-      {/* TAB 2: 🏋️ TRAINING ATTENDANCE & EFFORT RATING DRAWER */}
+      {/* TAB 2: 🏋️ TRAINING ATTENDANCE & EFFORT RATING */}
       {activeTab === 'training' && (
         <div>
-          <h1 className="text-xl font-black text-lime-400 mb-2">Midweek Training Tracker</h1>
+          <h1 className="text-xl font-black text-lime-400 mb-3">Midweek Training Tracker</h1>
 
-          <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4 flex justify-between items-center">
+          <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 mb-4 flex justify-between items-center shadow-md">
             <div>
               <label className="block text-[10px] text-gray-400 font-bold uppercase tracking-wider mb-1">
                 Session Date
@@ -1401,18 +1439,18 @@ export default function MatchdayApp() {
                 type="date"
                 value={sessionDate}
                 onChange={(e) => setSessionDate(e.target.value)}
-                className="bg-black border border-gray-800 text-lime-400 font-black text-xs rounded p-2 focus:outline-none"
+                className="bg-black border border-gray-800 text-lime-400 font-black text-xs rounded-lg p-2 focus:outline-none"
               />
             </div>
             <div className="text-right">
               <span className="block text-[10px] text-gray-400 font-bold uppercase tracking-wider">Attendance Rate</span>
-              <span className="text-lg font-mono font-black text-lime-400">
+              <span className="text-xl font-mono font-black text-lime-400">
                 {attendedCount}/{squad.length} ({Math.round((attendedCount / (squad.length || 1)) * 100)}%)
               </span>
             </div>
           </div>
 
-          <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
+          <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 mb-4 shadow-md">
             <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold mb-3 flex justify-between items-center">
               <span>📋 Attendance & Effort Ratings</span>
               <span className="text-[10px] text-gray-400">1-5 Stars Focus/Effort</span>
@@ -1428,7 +1466,7 @@ export default function MatchdayApp() {
                 };
 
                 return (
-                  <div key={player.id} className="p-3 bg-black rounded-xl border border-gray-800">
+                  <div key={player.id} className="p-3.5 bg-black rounded-2xl border border-gray-800">
                     <div className="flex justify-between items-center mb-2">
                       <span className="font-extrabold text-sm text-white">
                         #{player.squad_number} {player.name}
@@ -1437,7 +1475,7 @@ export default function MatchdayApp() {
                       <div className="flex gap-1">
                         <button
                           onClick={() => handleTrainingStatusChange(player.id, 'attended')}
-                          className={`px-2 py-1 rounded text-[10px] font-black transition-all ${
+                          className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black transition-all min-h-[36px] ${
                             rec.status === 'attended'
                               ? 'bg-emerald-500 text-black'
                               : 'bg-gray-900 text-gray-400 border border-gray-800'
@@ -1447,7 +1485,7 @@ export default function MatchdayApp() {
                         </button>
                         <button
                           onClick={() => handleTrainingStatusChange(player.id, 'absent')}
-                          className={`px-2 py-1 rounded text-[10px] font-black transition-all ${
+                          className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black transition-all min-h-[36px] ${
                             rec.status === 'absent'
                               ? 'bg-red-500 text-white'
                               : 'bg-gray-900 text-gray-400 border border-gray-800'
@@ -1457,7 +1495,7 @@ export default function MatchdayApp() {
                         </button>
                         <button
                           onClick={() => handleTrainingStatusChange(player.id, 'excused')}
-                          className={`px-2 py-1 rounded text-[10px] font-black transition-all ${
+                          className={`px-2.5 py-1.5 rounded-lg text-[10px] font-black transition-all min-h-[36px] ${
                             rec.status === 'excused'
                               ? 'bg-amber-500 text-black'
                               : 'bg-gray-900 text-gray-400 border border-gray-800'
@@ -1472,12 +1510,12 @@ export default function MatchdayApp() {
                       <div className="mt-2.5 pt-2.5 border-t border-gray-900 flex flex-col gap-2">
                         <div className="flex justify-between items-center">
                           <span className="text-[10px] text-gray-400 font-bold uppercase">Focus / Effort Rating:</span>
-                          <div className="flex gap-1">
+                          <div className="flex gap-1.5">
                             {[1, 2, 3, 4, 5].map((star) => (
                               <button
                                 key={star}
                                 onClick={() => handleRatingChange(player.id, star)}
-                                className={`text-xs ${
+                                className={`text-sm ${
                                   star <= rec.effortRating ? 'text-amber-400 scale-110' : 'text-gray-700'
                                 }`}
                               >
@@ -1492,7 +1530,7 @@ export default function MatchdayApp() {
                           placeholder="Drill notes (e.g. Sharp 1v1s, good positioning)"
                           value={rec.notes}
                           onChange={(e) => handleNotesChange(player.id, e.target.value)}
-                          className="w-full bg-gray-950 border border-gray-850 rounded p-2 text-[11px] text-gray-300 focus:outline-none focus:border-lime-400"
+                          className="w-full bg-gray-950 border border-gray-850 rounded-xl p-2.5 text-[11px] text-gray-300 focus:outline-none focus:border-lime-400"
                         />
                       </div>
                     )}
@@ -1504,19 +1542,19 @@ export default function MatchdayApp() {
 
           <button
             onClick={applyTrainingToAvailability}
-            className="w-full bg-lime-500 hover:bg-lime-400 text-black font-black p-4 rounded-xl text-sm active:scale-95 transition-all shadow-lg mb-6"
+            className="w-full bg-lime-500 hover:bg-lime-400 text-black font-black p-4 rounded-2xl text-sm active:scale-95 transition-all shadow-lg mb-6 min-h-[48px]"
           >
             ⚡ SYNC ATTENDED PLAYERS TO MATCHDAY PLANNER
           </button>
         </div>
       )}
 
-      {/* TAB 3: PLANNER WITH STARTING LINEUP SELECTION */}
+      {/* TAB 3: PLANNER */}
       {activeTab === 'planner' && (
         <div>
-          <h1 className="text-xl font-black text-lime-400 mb-2">Matchday Scheduler</h1>
+          <h1 className="text-xl font-black text-lime-400 mb-3">Matchday Scheduler</h1>
 
-          <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
+          <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 mb-4 shadow-md">
             <label className="block text-xs font-bold text-lime-400 mb-2 uppercase tracking-wider">
               ⏱️ Match Half Duration ({halfMinutes}m per half = {halfMinutes * 2}m total)
             </label>
@@ -1525,7 +1563,7 @@ export default function MatchdayApp() {
                 <button
                   key={mins}
                   onClick={() => handleHalfMinutesChange(mins)}
-                  className={`flex-1 py-2 rounded text-xs font-bold border transition-all ${
+                  className={`flex-1 py-2.5 rounded-xl text-xs font-bold border transition-all min-h-[44px] ${
                     halfMinutes === mins
                       ? 'bg-lime-500 text-black border-lime-400'
                       : 'bg-black border-gray-800 text-gray-400 hover:border-gray-700'
@@ -1535,28 +1573,28 @@ export default function MatchdayApp() {
                 </button>
               ))}
             </div>
-            <div className="flex items-center gap-3 pt-2 border-t border-gray-800">
+            <div className="flex items-center gap-3 pt-2.5 border-t border-gray-800">
               <span className="text-xs font-bold text-gray-400">Custom Half Duration:</span>
               <div className="flex items-center gap-1">
                 <input
                   type="number"
                   value={halfMinutes}
                   onChange={(e) => handleHalfMinutesChange(parseInt(e.target.value, 10) || 20)}
-                  className="bg-black border border-gray-800 rounded p-1.5 w-16 text-center text-xs font-bold text-lime-400 focus:outline-none focus:border-lime-400"
+                  className="bg-black border border-gray-800 rounded-lg p-1.5 w-16 text-center text-xs font-bold text-lime-400 focus:outline-none focus:border-lime-400"
                 />
                 <span className="text-xs text-gray-400 font-bold">mins</span>
               </div>
             </div>
           </div>
 
-          <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
+          <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 mb-4 shadow-md">
             <label className="block text-xs font-bold text-lime-400 mb-2 uppercase tracking-wider">
               🧤 Goalkeeper Strategy
             </label>
             <div className="flex gap-2 mb-3">
               <button
                 onClick={() => setGkMode('fixed')}
-                className={`flex-1 py-2 rounded text-xs font-bold border ${
+                className={`flex-1 py-2.5 rounded-xl text-xs font-bold border min-h-[44px] ${
                   gkMode === 'fixed' ? 'bg-lime-500 text-black border-lime-400' : 'bg-black border-gray-800 text-gray-400'
                 }`}
               >
@@ -1564,7 +1602,7 @@ export default function MatchdayApp() {
               </button>
               <button
                 onClick={() => setGkMode('split')}
-                className={`flex-1 py-2 rounded text-xs font-bold border ${
+                className={`flex-1 py-2.5 rounded-xl text-xs font-bold border min-h-[44px] ${
                   gkMode === 'split' ? 'bg-lime-500 text-black border-lime-400' : 'bg-black border-gray-800 text-gray-400'
                 }`}
               >
@@ -1576,7 +1614,7 @@ export default function MatchdayApp() {
               <select
                 value={fixedGkId || ''}
                 onChange={(e) => setFixedGkId(e.target.value || null)}
-                className="w-full bg-black border border-gray-800 rounded-lg p-2.5 text-white text-xs font-bold"
+                className="w-full bg-black border border-gray-800 rounded-xl p-3 text-white text-xs font-bold focus:outline-none focus:border-lime-400 min-h-[44px]"
               >
                 <option value="">No Fixed GK (Rotate everyone)</option>
                 {squad
@@ -1591,11 +1629,11 @@ export default function MatchdayApp() {
               <div>
                 <div className="grid grid-cols-2 gap-2 mb-3">
                   <div>
-                    <label className="block text-[10px] text-gray-400 mb-1">Half 1 Goalkeeper</label>
+                    <label className="block text-[10px] text-gray-400 mb-1 font-bold">Half 1 Goalkeeper</label>
                     <select
                       value={fixedGkId || ''}
                       onChange={(e) => setFixedGkId(e.target.value || null)}
-                      className="w-full bg-black border border-gray-800 rounded p-2 text-white text-xs font-bold"
+                      className="w-full bg-black border border-gray-800 rounded-xl p-2.5 text-white text-xs font-bold min-h-[44px]"
                     >
                       <option value="">Select H1 GK</option>
                       {squad
@@ -1606,11 +1644,11 @@ export default function MatchdayApp() {
                     </select>
                   </div>
                   <div>
-                    <label className="block text-[10px] text-gray-400 mb-1">Half 2 Goalkeeper</label>
+                    <label className="block text-[10px] text-gray-400 mb-1 font-bold">Half 2 Goalkeeper</label>
                     <select
                       value={half2GkId || ''}
                       onChange={(e) => setHalf2GkId(e.target.value || null)}
-                      className="w-full bg-black border border-gray-800 rounded p-2 text-white text-xs font-bold"
+                      className="w-full bg-black border border-gray-800 rounded-xl p-2.5 text-white text-xs font-bold min-h-[44px]"
                     >
                       <option value="">Select H2 GK</option>
                       {squad
@@ -1622,13 +1660,13 @@ export default function MatchdayApp() {
                   </div>
                 </div>
 
-                <div className="p-2.5 bg-black rounded-lg border border-gray-800">
+                <div className="p-3 bg-black rounded-xl border border-gray-800">
                   <div className="flex justify-between items-center text-xs">
                     <span className="font-bold text-gray-300">Max Outfield Mins for GKs:</span>
                     <select
                       value={maxGkOutfieldMins}
                       onChange={(e) => setMaxGkOutfieldMins(parseInt(e.target.value, 10))}
-                      className="bg-gray-900 border border-gray-700 rounded p-1 text-lime-400 font-bold"
+                      className="bg-gray-900 border border-gray-700 rounded-lg p-1.5 text-lime-400 font-bold"
                     >
                       <option value={5}>5 mins max</option>
                       <option value={8}>8 mins max</option>
@@ -1642,7 +1680,7 @@ export default function MatchdayApp() {
             )}
           </div>
 
-          <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
+          <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 mb-4 shadow-md">
             <h2 className="text-xs uppercase tracking-widest text-gray-300 font-bold mb-3 flex justify-between">
               <span>1. Available Players ({availablePlayerIds.length}/{squad.length})</span>
             </h2>
@@ -1655,7 +1693,7 @@ export default function MatchdayApp() {
                   <button
                     key={player.id}
                     onClick={() => togglePlayerAvailability(player.id)}
-                    className={`p-2.5 rounded-lg text-left border font-bold text-xs flex justify-between items-center ${
+                    className={`p-3 rounded-xl text-left border font-bold text-xs flex justify-between items-center min-h-[44px] ${
                       isGk
                         ? 'bg-lime-500/20 border-lime-500 text-lime-400'
                         : isChecked
@@ -1671,15 +1709,14 @@ export default function MatchdayApp() {
             </div>
           </div>
 
-          {/* NEW STARTING LINEUP SELECTION CARD */}
-          <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
+          <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 mb-4 shadow-md">
             <div className="flex justify-between items-center mb-3">
               <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold">
                 2. Select Starting Lineup ({startingPlayerIds.length}/{currentPitchCapacity})
               </h2>
               <button
                 onClick={autoSelectStarters}
-                className="text-[10px] bg-lime-500/20 text-lime-400 border border-lime-500/40 px-2 py-0.5 rounded font-black hover:bg-lime-500 hover:text-black transition-all"
+                className="text-[10px] bg-lime-500/20 text-lime-400 border border-lime-500/40 px-2.5 py-1 rounded-lg font-black hover:bg-lime-500 hover:text-black transition-all"
               >
                 ⚡ AUTO-SELECT
               </button>
@@ -1696,7 +1733,7 @@ export default function MatchdayApp() {
                     <button
                       key={player.id}
                       onClick={() => toggleStarterSelection(player.id)}
-                      className={`p-2.5 rounded-lg text-left border font-bold text-xs flex justify-between items-center ${
+                      className={`p-3 rounded-xl text-left border font-bold text-xs flex justify-between items-center min-h-[44px] ${
                         isStarter
                           ? 'bg-red-500/20 border-red-500 text-red-300'
                           : 'bg-black border-gray-800 text-gray-400'
@@ -1711,7 +1748,7 @@ export default function MatchdayApp() {
           </div>
 
           {availablePlayerIds.length > currentPitchCapacity && (
-            <div className="bg-lime-500/10 border border-lime-500/40 p-3 rounded-xl mb-4 text-xs">
+            <div className="bg-lime-500/10 border border-lime-500/40 p-3.5 rounded-2xl mb-4 text-xs shadow-md">
               <div className="flex items-center gap-2 mb-1">
                 <span className="text-lime-400 font-black">💡 CO-GAFFER RECOMMENDATION</span>
               </div>
@@ -1721,14 +1758,14 @@ export default function MatchdayApp() {
                   setRotationIntervalMins(rec.interval);
                   setSubsPerBatch(rec.batch);
                 }}
-                className="mt-2 bg-lime-500 text-black font-extrabold px-3 py-1 rounded text-[10px] hover:bg-lime-400"
+                className="mt-2.5 bg-lime-500 text-black font-extrabold px-3 py-1.5 rounded-lg text-[10px] hover:bg-lime-400 transition-all min-h-[36px]"
               >
                 APPLY RECOMMENDATION ({rec.interval}m / {rec.batch} subs)
               </button>
             </div>
           )}
 
-          <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
+          <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 mb-4 shadow-md">
             <div className="grid grid-cols-2 gap-3">
               <div>
                 <label className="block text-[11px] font-bold text-gray-300 mb-1.5 uppercase tracking-wider">
@@ -1737,7 +1774,7 @@ export default function MatchdayApp() {
                 <select
                   value={rotationIntervalMins}
                   onChange={(e) => setRotationIntervalMins(parseInt(e.target.value, 10))}
-                  className="w-full bg-black border border-gray-800 rounded-lg p-2.5 text-white text-xs font-bold focus:outline-none focus:border-lime-400"
+                  className="w-full bg-black border border-gray-800 rounded-xl p-3 text-white text-xs font-bold focus:outline-none focus:border-lime-400 min-h-[44px]"
                 >
                   <option value={5}>Every 5 mins</option>
                   <option value={6}>Every 6 mins</option>
@@ -1754,7 +1791,7 @@ export default function MatchdayApp() {
                 <select
                   value={subsPerBatch}
                   onChange={(e) => setSubsPerBatch(parseInt(e.target.value, 10))}
-                  className="w-full bg-black border border-gray-800 rounded-lg p-2.5 text-white text-xs font-bold focus:outline-none focus:border-lime-400"
+                  className="w-full bg-black border border-gray-800 rounded-xl p-3 text-white text-xs font-bold focus:outline-none focus:border-lime-400 min-h-[44px]"
                 >
                   <option value={1}>1 Player at a time</option>
                   <option value={2}>2 Players at once</option>
@@ -1765,7 +1802,7 @@ export default function MatchdayApp() {
           </div>
 
           {availablePlayerIds.length > 0 && (
-            <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-4">
+            <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 mb-4 shadow-md">
               <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold mb-3 flex justify-between">
                 <span>📊 Projected Playing Time Breakdown</span>
                 <span>{halfMinutes * 2}m Total Match</span>
@@ -1774,7 +1811,7 @@ export default function MatchdayApp() {
                 {getProjectedMinutes().map((player) => (
                   <div
                     key={player.id}
-                    className="p-2.5 bg-black rounded-lg border border-gray-800 flex justify-between items-center text-xs"
+                    className="p-3 bg-black rounded-xl border border-gray-800 flex justify-between items-center text-xs"
                   >
                     <span className="font-bold text-gray-300">
                       #{player.squad_number} {player.name}
@@ -1791,19 +1828,19 @@ export default function MatchdayApp() {
 
           <button
             onClick={handleGenerateMatchPlan}
-            className="w-full bg-lime-500 text-black font-black p-4 rounded-xl text-sm active:scale-95 transition-all shadow-lg"
+            className="w-full bg-lime-500 text-black font-black p-4 rounded-2xl text-sm active:scale-95 transition-all shadow-lg min-h-[48px]"
           >
             ⚡ GENERATE LINEUP & SUB SCHEDULE
           </button>
         </div>
       )}
 
-      {/* TAB 4: TEAM ROSTER MANAGEMENT */}
+      {/* TAB 4: TEAM ROSTER */}
       {activeTab === 'squad' && (
         <div>
           <h1 className="text-xl font-black text-lime-400 mb-4">Team Roster Manager</h1>
 
-          <form onSubmit={handleAddPlayer} className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-6">
+          <form onSubmit={handleAddPlayer} className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 mb-6 shadow-md">
             <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-3 font-bold">Add New Player</h2>
             <div className="flex flex-col gap-3">
               <input
@@ -1811,7 +1848,7 @@ export default function MatchdayApp() {
                 placeholder="Player Name"
                 value={newName}
                 onChange={(e) => setNewName(e.target.value)}
-                className="bg-black border border-gray-800 rounded-lg p-3 text-white focus:outline-none focus:border-lime-400 text-xs font-bold"
+                className="bg-black border border-gray-800 rounded-xl p-3 text-white focus:outline-none focus:border-lime-400 text-xs font-bold min-h-[44px]"
               />
               <div className="flex gap-2">
                 <input
@@ -1819,12 +1856,12 @@ export default function MatchdayApp() {
                   placeholder="Kit #"
                   value={newNumber}
                   onChange={(e) => setNewNumber(e.target.value)}
-                  className="bg-black border border-gray-800 rounded-lg p-3 text-white w-1/3 focus:outline-none focus:border-lime-400 text-xs font-bold"
+                  className="bg-black border border-gray-800 rounded-xl p-3 text-white w-1/3 focus:outline-none focus:border-lime-400 text-xs font-bold min-h-[44px]"
                 />
                 <select
                   value={newPosition}
                   onChange={(e) => setNewPosition(e.target.value)}
-                  className="bg-black border border-gray-800 rounded-lg p-3 text-white w-2/3 focus:outline-none focus:border-lime-400 text-xs font-bold"
+                  className="bg-black border border-gray-800 rounded-xl p-3 text-white w-2/3 focus:outline-none focus:border-lime-400 text-xs font-bold min-h-[44px]"
                 >
                   <option value="Goalkeeper">Goalkeeper</option>
                   <option value="Defender">Defender</option>
@@ -1834,44 +1871,44 @@ export default function MatchdayApp() {
               </div>
               <button
                 type="submit"
-                className="bg-lime-500 text-black font-black p-3 rounded-lg active:scale-95 transition-all text-xs"
+                className="bg-lime-500 text-black font-black p-3.5 rounded-xl active:scale-95 transition-all text-xs min-h-[48px]"
               >
                 + ADD TO ROSTER
               </button>
             </div>
           </form>
 
-          <div className="bg-gray-900 p-4 rounded-xl border border-gray-800">
+          <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md">
             <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-3 font-bold flex justify-between">
               <span>Active Roster ({squad.length})</span>
               <span className="text-lime-400">Tap to edit details</span>
             </h2>
 
-            <div className="flex flex-col gap-2.5">
+            <div className="flex flex-col gap-3">
               {squad.map((player) => {
                 const isEditing = editingPlayerId === player.id;
 
                 return (
-                  <div key={player.id} className="p-3 bg-black rounded-xl border border-gray-800">
+                  <div key={player.id} className="p-3.5 bg-black rounded-2xl border border-gray-800">
                     {isEditing ? (
                       <div className="flex flex-col gap-2">
                         <input
                           type="text"
                           value={editName}
                           onChange={(e) => setEditName(e.target.value)}
-                          className="bg-gray-900 border border-gray-700 rounded p-2 text-xs font-bold text-white"
+                          className="bg-gray-900 border border-gray-700 rounded-xl p-2.5 text-xs font-bold text-white min-h-[44px]"
                         />
                         <div className="flex gap-2">
                           <input
                             type="number"
                             value={editNumber}
                             onChange={(e) => setEditNumber(e.target.value)}
-                            className="bg-gray-900 border border-gray-700 rounded p-2 text-xs font-bold text-white w-1/3"
+                            className="bg-gray-900 border border-gray-700 rounded-xl p-2.5 text-xs font-bold text-white w-1/3 min-h-[44px]"
                           />
                           <select
                             value={editPosition}
                             onChange={(e) => setEditPosition(e.target.value)}
-                            className="bg-gray-900 border border-gray-700 rounded p-2 text-xs font-bold text-white w-2/3"
+                            className="bg-gray-900 border border-gray-700 rounded-xl p-2.5 text-xs font-bold text-white w-2/3 min-h-[44px]"
                           >
                             <option value="Goalkeeper">Goalkeeper</option>
                             <option value="Defender">Defender</option>
@@ -1882,13 +1919,13 @@ export default function MatchdayApp() {
                         <div className="flex gap-2 mt-1">
                           <button
                             onClick={() => saveEditPlayer(player.id)}
-                            className="flex-1 bg-lime-500 text-black font-extrabold py-1.5 rounded text-xs"
+                            className="flex-1 bg-lime-500 text-black font-extrabold py-2 rounded-xl text-xs min-h-[40px]"
                           >
                             SAVE
                           </button>
                           <button
                             onClick={() => setEditingPlayerId(null)}
-                            className="bg-gray-800 text-gray-300 font-bold px-3 py-1.5 rounded text-xs"
+                            className="bg-gray-800 text-gray-300 font-bold px-4 py-2 rounded-xl text-xs min-h-[40px]"
                           >
                             CANCEL
                           </button>
@@ -1899,41 +1936,41 @@ export default function MatchdayApp() {
                         <div className="flex justify-between items-center mb-2">
                           <div>
                             <span className="font-extrabold text-base mr-2">#{player.squad_number} {player.name}</span>
-                            <span className="text-[10px] text-lime-400 bg-lime-500/10 border border-lime-500/30 px-2 py-0.5 rounded font-bold">
+                            <span className="text-[10px] text-lime-400 bg-lime-500/10 border border-lime-500/30 px-2.5 py-1 rounded-md font-bold">
                               {player.preferred_position}
                             </span>
                           </div>
-                          <div className="flex items-center gap-1">
+                          <div className="flex items-center gap-1.5">
                             <button
                               onClick={() => startEditPlayer(player)}
-                              className="text-gray-400 hover:text-white font-bold text-xs px-2 py-1 bg-gray-900 rounded border border-gray-800"
+                              className="text-gray-400 hover:text-white font-bold text-xs px-2.5 py-1.5 bg-gray-900 rounded-xl border border-gray-800 min-h-[36px]"
                             >
                               ✏️ EDIT
                             </button>
                             <button
                               onClick={() => handleDeletePlayer(player.id)}
-                              className="text-red-500 hover:text-red-400 font-bold text-xs px-2 py-1 bg-red-950/40 rounded border border-red-900/40"
+                              className="text-red-500 hover:text-red-400 font-bold text-xs px-2.5 py-1.5 bg-red-950/40 rounded-xl border border-red-900/40 min-h-[36px]"
                             >
                               🗑️
                             </button>
                           </div>
                         </div>
 
-                        <div className="grid grid-cols-4 gap-1 text-[10px] bg-gray-950 p-2 rounded-lg text-center font-mono text-gray-400 border border-gray-850">
+                        <div className="grid grid-cols-4 gap-1 text-[10px] bg-gray-950 p-2.5 rounded-xl text-center font-mono text-gray-400 border border-gray-850">
                           <div>
-                            <span className="block text-gray-500 text-[9px]">MATCHES</span>
+                            <span className="block text-gray-500 text-[9px] font-bold">MATCHES</span>
                             <span className="font-bold text-white">{player.total_matches}</span>
                           </div>
                           <div>
-                            <span className="block text-gray-500 text-[9px]">MINS</span>
+                            <span className="block text-gray-500 text-[9px] font-bold">MINS</span>
                             <span className="font-bold text-lime-400">{Math.floor((player.total_seconds_played || 0) / 60)}m</span>
                           </div>
                           <div>
-                            <span className="block text-gray-500 text-[9px]">GOALS</span>
+                            <span className="block text-gray-500 text-[9px] font-bold">GOALS</span>
                             <span className="font-bold text-amber-400">{player.total_goals}</span>
                           </div>
                           <div>
-                            <span className="block text-gray-500 text-[9px]">POTM</span>
+                            <span className="block text-gray-500 text-[9px] font-bold">POTM</span>
                             <span className="font-bold text-purple-400">{player.total_potm} ⭐</span>
                           </div>
                         </div>
@@ -1952,7 +1989,7 @@ export default function MatchdayApp() {
         <div>
           <h1 className="text-xl font-black text-lime-400 mb-4">Season Equal-Time Audit</h1>
 
-          <div className="bg-gray-900 p-4 rounded-xl border border-gray-800 mb-6">
+          <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 mb-6 shadow-md">
             <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold mb-3 flex justify-between items-center">
               <span>⏱️ Team Playing Time Audit</span>
               <span className="text-[10px] text-gray-400">FA 100% Equal Rotation</span>
@@ -1964,12 +2001,12 @@ export default function MatchdayApp() {
                 const percentOfMax = Math.round(((player.total_seconds_played || 0) / squadMaxSeconds) * 100);
 
                 return (
-                  <div key={player.id} className="bg-black p-3 rounded-lg border border-gray-800">
-                    <div className="flex justify-between items-center text-xs mb-1 font-bold">
+                  <div key={player.id} className="bg-black p-3.5 rounded-xl border border-gray-800">
+                    <div className="flex justify-between items-center text-xs mb-1.5 font-bold">
                       <span className="text-gray-200">#{player.squad_number} {player.name}</span>
                       <span className="font-mono text-lime-400">{mins} mins ({player.total_matches} matches)</span>
                     </div>
-                    <div className="w-full bg-gray-900 h-2 rounded-full overflow-hidden border border-gray-800">
+                    <div className="w-full bg-gray-900 h-2.5 rounded-full overflow-hidden border border-gray-800">
                       <div
                         className={`h-full transition-all ${
                           percentOfMax >= 85 ? 'bg-lime-500' : percentOfMax >= 60 ? 'bg-amber-400' : 'bg-red-500'
@@ -1983,13 +2020,13 @@ export default function MatchdayApp() {
             </div>
           </div>
 
-          <div className="bg-gray-900 p-4 rounded-xl border border-gray-800">
+          <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md">
             <h2 className="text-xs uppercase tracking-widest text-gray-400 mb-3 font-bold">
               📜 Saved Match History ({matchHistory.length})
             </h2>
-            <div className="flex flex-col gap-2">
+            <div className="flex flex-col gap-2.5">
               {matchHistory.map((m) => (
-                <div key={m.id} className="p-3 bg-black rounded-lg border border-gray-800 flex flex-col gap-1.5 text-xs">
+                <div key={m.id} className="p-3.5 bg-black rounded-xl border border-gray-800 flex flex-col gap-1.5 text-xs">
                   <div className="flex justify-between items-center">
                     <div>
                       <span className="font-bold text-white block">Vs. {m.opponent_name} ({m.age_group})</span>
@@ -2019,43 +2056,43 @@ export default function MatchdayApp() {
       )}
 
       {/* BOTTOM NAVIGATION BAR */}
-      <div className="fixed bottom-0 left-0 right-0 bg-gray-950 border-t border-gray-800 p-2 flex justify-around max-w-md mx-auto z-50">
+      <div className="fixed bottom-0 left-0 right-0 bg-gray-950/95 border-t border-gray-800 p-2 flex justify-around max-w-md mx-auto z-50 backdrop-blur-md">
         <button
           onClick={() => setActiveTab('matchday')}
-          className={`flex-1 py-3 font-black text-xs rounded-lg transition-all ${
-            activeTab === 'matchday' ? 'bg-lime-500 text-black' : 'text-gray-400'
+          className={`flex-1 py-3 font-black text-xs rounded-xl transition-all min-h-[48px] ${
+            activeTab === 'matchday' ? 'bg-lime-500 text-black shadow-md' : 'text-gray-400'
           }`}
         >
           ⚽ MATCH
         </button>
         <button
           onClick={() => setActiveTab('training')}
-          className={`flex-1 py-3 font-black text-xs rounded-lg transition-all ${
-            activeTab === 'training' ? 'bg-lime-500 text-black' : 'text-gray-400'
+          className={`flex-1 py-3 font-black text-xs rounded-xl transition-all min-h-[48px] ${
+            activeTab === 'training' ? 'bg-lime-500 text-black shadow-md' : 'text-gray-400'
           }`}
         >
           🏋️ DRILLS
         </button>
         <button
           onClick={() => setActiveTab('planner')}
-          className={`flex-1 py-3 font-black text-xs rounded-lg transition-all ${
-            activeTab === 'planner' ? 'bg-lime-500 text-black' : 'text-gray-400'
+          className={`flex-1 py-3 font-black text-xs rounded-xl transition-all min-h-[48px] ${
+            activeTab === 'planner' ? 'bg-lime-500 text-black shadow-md' : 'text-gray-400'
           }`}
         >
           📅 PLANNER
         </button>
         <button
           onClick={() => setActiveTab('squad')}
-          className={`flex-1 py-3 font-black text-xs rounded-lg transition-all ${
-            activeTab === 'squad' ? 'bg-lime-500 text-black' : 'text-gray-400'
+          className={`flex-1 py-3 font-black text-xs rounded-xl transition-all min-h-[48px] ${
+            activeTab === 'squad' ? 'bg-lime-500 text-black shadow-md' : 'text-gray-400'
           }`}
         >
           📋 TEAM
         </button>
         <button
           onClick={() => setActiveTab('stats')}
-          className={`flex-1 py-3 font-black text-xs rounded-lg transition-all ${
-            activeTab === 'stats' ? 'bg-lime-500 text-black' : 'text-gray-400'
+          className={`flex-1 py-3 font-black text-xs rounded-xl transition-all min-h-[48px] ${
+            activeTab === 'stats' ? 'bg-lime-500 text-black shadow-md' : 'text-gray-400'
           }`}
         >
           📊 AUDIT

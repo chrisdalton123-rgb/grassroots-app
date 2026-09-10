@@ -246,7 +246,19 @@ export default function MatchdayApp() {
       setSquad(formatted);
       const avail = formatted.map((p) => p.id);
       setAvailablePlayerIds(avail);
-      setStartingPlayerIds(avail.slice(0, currentPitchCapacity));
+
+      // Prioritise designated goalkeeper for starting lineup
+      const gkPlayer = formatted.find((p) => p.preferred_position === 'Goalkeeper');
+      if (gkPlayer) setFixedGkId(gkPlayer.id);
+
+      let starters: Player[] = [];
+      if (gkPlayer) {
+        starters.push(gkPlayer);
+      }
+      const outfieldPool = formatted.filter((p) => !gkPlayer || p.id !== gkPlayer.id);
+      starters = [...starters, ...outfieldPool.slice(0, currentPitchCapacity - starters.length)];
+
+      setStartingPlayerIds(starters.map((p) => p.id));
 
       const initialTraining: Record<string, TrainingRecord> = {};
       formatted.forEach((p) => {
@@ -259,11 +271,8 @@ export default function MatchdayApp() {
       });
       setTrainingData(initialTraining);
 
-      const defaultGk = formatted.find((p) => p.preferred_position === 'Goalkeeper');
-      if (defaultGk) setFixedGkId(defaultGk.id);
-
-      const initialPitch = formatted.slice(0, currentPitchCapacity).map((p) => ({ ...p, isStarter: true }));
-      const initialBench = formatted.slice(currentPitchCapacity).map((p) => ({ ...p, isStarter: false }));
+      const initialPitch = starters.map((p) => ({ ...p, isStarter: true }));
+      const initialBench = formatted.filter((p) => !starters.some((s) => s.id === p.id)).map((p) => ({ ...p, isStarter: false }));
 
       setPitchPlayers(initialPitch);
       setSubBench(initialBench);
@@ -484,7 +493,7 @@ export default function MatchdayApp() {
       updatedPitch = pitchPlayers.map((p) => (p.id === playerId ? { ...subIn, current_position: p.current_position } : p));
       updatedBench = subBench.filter((p) => p.id !== subIn.id);
     } else if (isPlayerOnPitch) {
-      updatedPitch = pitchPlayers.filter((p) => p.id !== playerId);
+      updatedPitch = pitchPlayers.filter((p) => p.id === playerId);
     } else {
       updatedBench = subBench.filter((p) => p.id !== playerId);
     }
@@ -649,7 +658,7 @@ export default function MatchdayApp() {
 
       const pureOutfield = active.filter((p) => p.id !== fixedGkId && p.id !== half2GkId);
       const remainingPitchSeats = currentPitchCapacity - 1;
-      
+
       if (pureOutfield.length > 0) {
         const totalOutfieldCapacityMins = remainingPitchSeats * totalMatchMins;
         const gkOutfieldConsumed = Math.min(maxGkOutfieldMins, halfMinutes) * 2;
@@ -917,10 +926,22 @@ export default function MatchdayApp() {
   ];
   const currentFormation = activeFormations[formationIndex] || activeFormations[0];
 
-  const strikers = pitchPlayers.filter((_, idx) => currentFormation.roles[idx] === 'STR');
-  const midfielders = pitchPlayers.filter((_, idx) => currentFormation.roles[idx] === 'MID');
-  const defenders = pitchPlayers.filter((_, idx) => currentFormation.roles[idx] === 'DEF');
-  const goalkeepers = pitchPlayers.filter((_, idx) => currentFormation.roles[idx] === 'GK' || idx === 0);
+  // LOGIC FIX: Isolate designated Goalkeeper explicitly, then fill formation roles
+  const goalkeeperPlayer = pitchPlayers.find((p) => p.id === fixedGkId || p.preferred_position === 'Goalkeeper') || pitchPlayers[0];
+  const outfieldPlayersOnPitch = pitchPlayers.filter((p) => p.id !== goalkeeperPlayer?.id);
+
+  // Distribute outfield players based on active formation roles
+  const outfieldRoles = currentFormation.roles.filter((r) => r !== 'GK');
+  const strikers: Player[] = [];
+  const midfielders: Player[] = [];
+  const defenders: Player[] = [];
+
+  outfieldPlayersOnPitch.forEach((player, idx) => {
+    const assignedRole = outfieldRoles[idx] || player.preferred_position;
+    if (assignedRole === 'STR' || assignedRole === 'Striker') strikers.push(player);
+    else if (assignedRole === 'DEF' || assignedRole === 'Defender') defenders.push(player);
+    else midfielders.push(player);
+  });
 
   const attendedCount = squad.filter((p) => trainingData[p.id]?.status === 'attended').length;
 
@@ -1208,33 +1229,29 @@ export default function MatchdayApp() {
                     </div>
                   )}
 
-                  {/* Goalkeeper */}
-                  <div className="flex justify-center items-center">
-                    {goalkeepers.slice(0, 1).map((player) => {
-                      const isSelected = selectedOnPitch === player.id;
-                      return (
-                        <button
-                          key={player.id}
-                          onClick={() => {
-                            triggerHaptic();
-                            setSelectedOnPitch(isSelected ? null : player.id);
-                          }}
-                          className={`p-2.5 rounded-2xl text-center transition-all border-2 min-h-[52px] ${
-                            isSelected
-                              ? 'bg-yellow-400 text-black border-yellow-200 scale-105 shadow-2xl'
-                              : 'bg-black/95 border-lime-400 text-white shadow-lg'
-                          }`}
-                        >
-                          <span className="text-xs font-black block">
-                            🧤 #{player.squad_number} {player.name} {player.isStarter ? '🚨' : ''}
-                          </span>
-                          <span className="text-[9px] font-mono text-lime-300 font-bold">
-                            GK • {formatPlayerMins(player.seconds_played)}
-                          </span>
-                        </button>
-                      );
-                    })}
-                  </div>
+                  {/* FIXED GOALKEEPER POSITION AT BOTTOM */}
+                  {goalkeeperPlayer && (
+                    <div className="flex justify-center items-center">
+                      <button
+                        onClick={() => {
+                          triggerHaptic();
+                          setSelectedOnPitch(selectedOnPitch === goalkeeperPlayer.id ? null : goalkeeperPlayer.id);
+                        }}
+                        className={`p-2.5 rounded-2xl text-center transition-all border-2 min-h-[52px] ${
+                          selectedOnPitch === goalkeeperPlayer.id
+                            ? 'bg-yellow-400 text-black border-yellow-200 scale-105 shadow-2xl'
+                            : 'bg-black/95 border-lime-400 text-white shadow-lg'
+                        }`}
+                      >
+                        <span className="text-xs font-black block">
+                          🧤 #{goalkeeperPlayer.squad_number} {goalkeeperPlayer.name} {goalkeeperPlayer.isStarter ? '🚨' : ''}
+                        </span>
+                        <span className="text-[9px] font-mono text-lime-300 font-bold">
+                          GK • {formatPlayerMins(goalkeeperPlayer.seconds_played)}
+                        </span>
+                      </button>
+                    </div>
+                  )}
                 </div>
               </div>
             </div>
@@ -1248,7 +1265,7 @@ export default function MatchdayApp() {
               <div className="grid grid-cols-2 gap-3">
                 {pitchPlayers.map((player) => {
                   const isSelected = selectedOnPitch === player.id;
-                  const isFixedGk = gkMode === 'fixed' && player.id === fixedGkId;
+                  const isFixedGk = player.id === fixedGkId || player.preferred_position === 'Goalkeeper';
 
                   return (
                     <div key={player.id} className="relative">

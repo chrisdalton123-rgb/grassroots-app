@@ -7,7 +7,7 @@
   "build": "next build --webpack",
   "start": "next start",
   "lint": "next lint"
-}
+},
   "dependencies": {
     "@supabase/ssr": "^0.12.7",
     "@supabase/supabase-js": "^2.116.0",

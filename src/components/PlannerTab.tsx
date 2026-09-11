@@ -3,7 +3,7 @@
 import React from 'react';
 import { Player, SubPlanStep } from '@/types/matchday';
 
-type Props = {
+export interface PlannerTabProps {
   halfMinutes: number;
   handleHalfMinutesChange: (mins: number) => void;
   squad: Player[];
@@ -28,8 +28,8 @@ type Props = {
   autoFillStarters: () => void;
   rotationIntervalMins: number;
   setRotationIntervalMins: (mins: number) => void;
-  subsPerBatch: number;
-  setSubsPerBatch: (batch: number) => void;
+  subsPerBatch: number | 'dynamic';
+  setSubsPerBatch: (batch: number | 'dynamic') => void;
   getProjectedMinutes: () => (Player & { projectedMins: number })[];
   handleGenerateMatchPlan: () => void;
   handleCommitPlanToMatchday: () => void;
@@ -41,9 +41,9 @@ type Props = {
   activeFormations: { label: string; roles: string[] }[];
   formationIndex: number;
   setFormationIndex: (idx: number) => void;
-};
+}
 
-export default function PlannerTab(props: Props) {
+export default function PlannerTab(props: PlannerTabProps) {
   const activeSquad = props.squad.filter((p) => props.availablePlayerIds.includes(p.id));
   const totalMatchMinutes = props.halfMinutes * 2;
   const currentSlots = props.activeFormations[props.formationIndex]?.roles || props.positionSlots.slice(0, props.currentPitchCapacity);
@@ -220,7 +220,7 @@ export default function PlannerTab(props: Props) {
         </div>
       </div>
 
-      {/* EQUAL-PLAY AUTO CALCULATOR WITH INTERVAL & BATCH TUNING */}
+      {/* EQUAL-PLAY AUTO CALCULATOR WITH DYNAMIC BATCH TUNING */}
       <div className="bg-gray-900/90 p-4 rounded-2xl border border-lime-500/30 shadow-md flex flex-col gap-3">
         <div className="flex justify-between items-center">
           <h2 className="text-xs uppercase tracking-widest text-lime-400 font-black">
@@ -233,22 +233,33 @@ export default function PlannerTab(props: Props) {
 
         {/* MULTI-SUB BATCH SIZE CONTROL */}
         <div className="bg-black p-3 rounded-xl border border-gray-800 text-xs flex flex-col gap-2">
-          <span className="text-[11px] font-bold text-lime-400 uppercase">🔄 Players to Rotate Per Window (Batch Size):</span>
-          <div className="flex gap-2">
+          <span className="text-[11px] font-bold text-lime-400 uppercase">🔄 Rotation Batching Strategy:</span>
+          <div className="grid grid-cols-2 gap-2">
             {[1, 2, 3].map((batch) => (
               <button
                 key={batch}
                 type="button"
                 onClick={() => props.setSubsPerBatch(batch)}
-                className={`flex-1 py-2.5 rounded-xl text-xs font-black border transition-all ${
+                className={`py-2 rounded-xl text-xs font-black border transition-all ${
                   props.subsPerBatch === batch
                     ? 'bg-lime-500 text-black border-lime-400 shadow-md'
                     : 'bg-gray-900 text-gray-400 border-gray-800'
                 }`}
               >
-                {batch === 1 ? '1 Player' : `${batch} Players`}
+                Fixed {batch} {batch === 1 ? 'Sub' : 'Subs'}
               </button>
             ))}
+            <button
+              type="button"
+              onClick={() => props.setSubsPerBatch('dynamic')}
+              className={`py-2 rounded-xl text-xs font-black border transition-all ${
+                props.subsPerBatch === 'dynamic'
+                  ? 'bg-amber-400 text-black border-amber-300 shadow-md'
+                  : 'bg-gray-900 text-gray-400 border-gray-800'
+              }`}
+            >
+              ⚡ Dynamic (3➔2➔3)
+            </button>
           </div>
         </div>
 

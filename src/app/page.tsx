@@ -42,7 +42,6 @@ const FORMATION_OPTIONS: Record<number, { label: string; roles: string[] }[]> = 
 };
 
 const POSITION_SLOTS = ['GK', 'L-DEF', 'C-DEF', 'R-DEF', 'L-MID', 'C-MID', 'R-MID', 'L-STR', 'C-STR', 'R-STR'];
-type ExtendedSubPlanStep = SubPlanStep & { isManual?: boolean };
 
 export default function MatchdayApp() {
   const [activeTab, setActiveTab] = useState<'matchday' | 'planner' | 'training' | 'squad' | 'stats'>('matchday');
@@ -75,8 +74,8 @@ export default function MatchdayApp() {
   const [gkStrategy, setGkStrategy] = useState<'full' | 'half' | 'rotate'>('half');
   const [halfTwoGkId, setHalfTwoGkId] = useState<string>('');
   const [rotationIntervalMins, setRotationIntervalMins] = useState<number>(5);
-  const [subsPerBatch, setSubsPerBatch] = useState<number>(2);
-  const [generatedPlan, setGeneratedPlan] = useState<ExtendedSubPlanStep[]>([]);
+  const [subsPerBatch, setSubsPerBatch] = useState<number | 'dynamic'>('dynamic');
+  const [generatedPlan, setGeneratedPlan] = useState<SubPlanStep[]>([]);
 
   const [goals, setGoals] = useState<MatchGoal[]>([]);
   const [playerOfTheMatch, setPlayerOfTheMatch] = useState<string | null>(null);
@@ -238,16 +237,15 @@ export default function MatchdayApp() {
     setStarterMap(nextMap);
   };
 
-  // MULTI-SUB ROTATION ENGINE (PRESERVES MANUAL SUBS AT BOTTOM)
+  // ROTATION ENGINE WITH DYNAMIC ALTERNATING BATCH SUPPORT
   const handleGenerateMatchPlan = () => {
     triggerHaptic();
     const active = squad.filter((p) => availablePlayerIds.includes(p.id));
     if (active.length === 0) return;
 
     const existingManuals = generatedPlan.filter((s) => s.isManual);
-
     const totalMatchMins = halfMinutes * 2;
-    const autoPlan: ExtendedSubPlanStep[] = [];
+    const autoPlan: SubPlanStep[] = [];
 
     let starterIds = Object.values(starterMap);
     let currentPitch = active.filter((p) => starterIds.includes(p.id));
@@ -255,9 +253,12 @@ export default function MatchdayApp() {
 
     const minsLogged: Record<string, number> = {};
     const outfieldMinsLogged: Record<string, number> = {};
+    const continuousBenchMins: Record<string, number> = {};
+
     active.forEach((p) => { 
       minsLogged[p.id] = 0; 
       outfieldMinsLogged[p.id] = 0;
+      continuousBenchMins[p.id] = starterIds.includes(p.id) ? 0 : 1;
     });
 
     let halfOneGk = starterMap['GK'] || active[0]?.id;
@@ -278,42 +279,47 @@ export default function MatchdayApp() {
         });
 
         currentPitch = currentPitch.map((p) => (p.id === halfOneGk ? active.find((a) => a.id === halfTwoGk)! : p));
-        currentBench = currentBench.map((p) => (p.id === halfTwoGk ? active.find((a) => a.id === halfTwoGk) : p)).filter(Boolean) as Player[];
+        currentBench = currentBench.map((p) => (p.id === halfTwoGk ? active.find((a) => a.id === halfOneGk)! : p));
       }
 
       currentPitch.forEach((p) => { 
         minsLogged[p.id] += 1;
+        continuousBenchMins[p.id] = 0;
         const currentGk = m <= halfMinutes ? halfOneGk : halfTwoGk;
-        if (p.id !== currentGk) {
-          outfieldMinsLogged[p.id] += 1;
-        }
+        if (p.id !== currentGk) outfieldMinsLogged[p.id] += 1;
+      });
+
+      currentBench.forEach((p) => {
+        continuousBenchMins[p.id] += 1;
       });
 
       if (m % rotationIntervalMins === 0 && m < totalMatchMins) {
         const activeGkId = m <= halfMinutes ? halfOneGk : halfTwoGk;
 
-        let eligibleOff = currentPitch.filter((p) => {
-          if (gkStrategy === 'full') return p.id !== halfOneGk;
-          return p.id !== activeGkId;
-        });
-
-        let eligibleOn = currentBench.filter((p) => {
-          if (gkStrategy === 'full') return p.id !== halfOneGk;
-          return p.id !== activeGkId;
-        });
+        let eligibleOff = currentPitch.filter((p) => (gkStrategy === 'full' ? p.id !== halfOneGk : p.id !== activeGkId));
+        let eligibleOn = currentBench.filter((p) => (gkStrategy === 'full' ? p.id !== halfOneGk : p.id !== activeGkId));
 
         if (eligibleOff.length > 0 && eligibleOn.length > 0) {
+          const windowIndex = Math.floor(m / rotationIntervalMins);
+          const targetBatchSize = subsPerBatch === 'dynamic' 
+            ? (windowIndex % 2 !== 0 ? 3 : 2) 
+            : subsPerBatch;
+
           eligibleOn.sort((a, b) => {
             const aIsOffDutyGk = (a.id === halfOneGk || a.id === halfTwoGk) && outfieldMinsLogged[a.id] < 10;
             const bIsOffDutyGk = (b.id === halfOneGk || b.id === halfTwoGk) && outfieldMinsLogged[b.id] < 10;
             if (aIsOffDutyGk && !bIsOffDutyGk) return -1;
             if (!aIsOffDutyGk && bIsOffDutyGk) return 1;
-            return minsLogged[a.id] - minsLogged[b.id];
+
+            if (minsLogged[a.id] !== minsLogged[b.id]) {
+              return minsLogged[a.id] - minsLogged[b.id];
+            }
+            return continuousBenchMins[b.id] - continuousBenchMins[a.id];
           });
 
           eligibleOff.sort((a, b) => minsLogged[b.id] - minsLogged[a.id]);
 
-          const swapsToMake = Math.min(subsPerBatch, eligibleOff.length, eligibleOn.length);
+          const swapsToMake = Math.min(targetBatchSize, eligibleOff.length, eligibleOn.length);
 
           for (let b = 0; b < swapsToMake; b++) {
             const outgoing = eligibleOff[b];
@@ -341,8 +347,6 @@ export default function MatchdayApp() {
     }
 
     autoPlan.sort((a, b) => a.minute - b.minute);
-
-    // Auto schedule comes first, Manual additions stay at the bottom
     setGeneratedPlan([...autoPlan, ...existingManuals]);
   };
 
@@ -418,52 +422,65 @@ export default function MatchdayApp() {
     const totalMatchMins = halfMinutes * 2;
     const minsMap: Record<string, number> = {};
     const outfieldMinsMap: Record<string, number> = {};
-    active.forEach((p) => { 
-      minsMap[p.id] = 0; 
-      outfieldMinsMap[p.id] = 0;
-    });
+    const benchMinsMap: Record<string, number> = {};
 
     let starterIds = Object.values(starterMap);
     let currentPitch = active.filter((p) => starterIds.includes(p.id));
     let currentBench = active.filter((p) => !starterIds.includes(p.id));
 
+    active.forEach((p) => { 
+      minsMap[p.id] = 0; 
+      outfieldMinsMap[p.id] = 0;
+      benchMinsMap[p.id] = starterIds.includes(p.id) ? 0 : 1;
+    });
+
     let halfOneGk = starterMap['GK'] || active[0]?.id;
     let halfTwoGk = gkStrategy === 'half' && halfTwoGkId ? halfTwoGkId : halfOneGk;
 
     for (let m = 1; m <= totalMatchMins; m++) {
+      if (m === halfMinutes + 1 && gkStrategy === 'half' && halfTwoGk && halfOneGk !== halfTwoGk) {
+        currentPitch = currentPitch.map((p) => (p.id === halfOneGk ? active.find((a) => a.id === halfTwoGk)! : p));
+        currentBench = currentBench.map((p) => (p.id === halfTwoGk ? active.find((a) => a.id === halfOneGk)! : p));
+      }
+
       currentPitch.forEach((p) => { 
-        minsMap[p.id] = (minsMap[p.id] || 0) + 1; 
+        minsMap[p.id] += 1; 
+        benchMinsMap[p.id] = 0;
         const currentGk = m <= halfMinutes ? halfOneGk : halfTwoGk;
-        if (p.id !== currentGk) {
-          outfieldMinsMap[p.id] = (outfieldMinsMap[p.id] || 0) + 1;
-        }
+        if (p.id !== currentGk) outfieldMinsMap[p.id] += 1;
+      });
+
+      currentBench.forEach((p) => {
+        benchMinsMap[p.id] += 1;
       });
 
       if (m % rotationIntervalMins === 0 && m < totalMatchMins) {
         const activeGkId = m <= halfMinutes ? halfOneGk : halfTwoGk;
 
-        let eligibleOff = currentPitch.filter((p) => {
-          if (gkStrategy === 'full') return p.id !== halfOneGk;
-          return p.id !== activeGkId;
-        });
-
-        let eligibleOn = currentBench.filter((p) => {
-          if (gkStrategy === 'full') return p.id !== halfOneGk;
-          return p.id !== activeGkId;
-        });
+        let eligibleOff = currentPitch.filter((p) => (gkStrategy === 'full' ? p.id !== halfOneGk : p.id !== activeGkId));
+        let eligibleOn = currentBench.filter((p) => (gkStrategy === 'full' ? p.id !== halfOneGk : p.id !== activeGkId));
 
         if (eligibleOff.length > 0 && eligibleOn.length > 0) {
+          const windowIndex = Math.floor(m / rotationIntervalMins);
+          const targetBatchSize = subsPerBatch === 'dynamic' 
+            ? (windowIndex % 2 !== 0 ? 3 : 2) 
+            : subsPerBatch;
+
           eligibleOn.sort((a, b) => {
-            const aIsOffDutyGk = (a.id === halfOneGk || a.id === halfTwoGk) && (outfieldMinsMap[a.id] || 0) < 10;
-            const bIsOffDutyGk = (b.id === halfOneGk || b.id === halfTwoGk) && (outfieldMinsMap[b.id] || 0) < 10;
+            const aIsOffDutyGk = (a.id === halfOneGk || a.id === halfTwoGk) && outfieldMinsMap[a.id] < 10;
+            const bIsOffDutyGk = (b.id === halfOneGk || b.id === halfTwoGk) && outfieldMinsMap[b.id] < 10;
             if (aIsOffDutyGk && !bIsOffDutyGk) return -1;
             if (!aIsOffDutyGk && bIsOffDutyGk) return 1;
-            return minsMap[a.id] - minsMap[b.id];
+
+            if (minsMap[a.id] !== minsMap[b.id]) {
+              return minsMap[a.id] - minsMap[b.id];
+            }
+            return benchMinsMap[b.id] - benchMinsMap[a.id];
           });
 
           eligibleOff.sort((a, b) => minsMap[b.id] - minsMap[a.id]);
 
-          const swapsToMake = Math.min(subsPerBatch, eligibleOff.length, eligibleOn.length);
+          const swapsToMake = Math.min(targetBatchSize, eligibleOff.length, eligibleOn.length);
 
           for (let b = 0; b < swapsToMake; b++) {
             const outP = eligibleOff[b];
@@ -684,7 +701,7 @@ export default function MatchdayApp() {
       <div className="flex justify-between items-center mb-4 px-1">
         <h1 className="text-2xl font-black text-lime-400 flex items-center gap-2"><span>📋</span> CO-GAFFER</h1>
         <span className="text-[10px] bg-gray-900 border border-gray-800 text-lime-400 font-extrabold px-2.5 py-1 rounded-md">
-          REORDERABLE SUB LIST
+          DYNAMIC BATCHING READY
         </span>
       </div>
 
@@ -761,7 +778,7 @@ export default function MatchdayApp() {
           positionSlots={POSITION_SLOTS}
           handleAddCustomSubStep={handleAddCustomSubStep}
           generatedPlan={generatedPlan}
-          handleRemoveSubStep={(id) => setGeneratedPlan((prev) => prev.filter((s) => s.id !== id))}
+          handleRemoveSubStep={(id: string) => setGeneratedPlan((prev) => prev.filter((s) => s.id !== id))}
           handleMoveSubStep={handleMoveSubStep}
           handleUpdateSubStepPosition={handleUpdateSubStepPosition}
           availablePlayerIds={availablePlayerIds}

@@ -70,8 +70,7 @@ export default function MatchdayApp() {
   const [planMinute, setPlanMinute] = useState<number>(7);
   const [planTargetPos, setPlanTargetPos] = useState<string>('C-MID');
   const [availablePlayerIds, setAvailablePlayerIds] = useState<string[]>([]);
-  const [startingPlayerIds, setStartingPlayerIds] = useState<string[]>([]);
-  const [fixedGkId, setFixedGkId] = useState<string | null>(null);
+  const [starterMap, setStarterMap] = useState<Record<string, string>>({}); // slot -> playerId
   const [isGkLocked, setIsGkLocked] = useState<boolean>(true);
   const [rotationIntervalMins, setRotationIntervalMins] = useState<number>(7);
   const [subsPerBatch, setSubsPerBatch] = useState<number>(1);
@@ -93,6 +92,7 @@ export default function MatchdayApp() {
   const [editPosition, setEditPosition] = useState('');
 
   const currentPitchCapacity = isPowerplayActive ? basePitchCapacity + 1 : basePitchCapacity;
+  const activeFormations = FORMATION_OPTIONS[basePitchCapacity] || [{ label: 'Standard Formation', roles: Array(basePitchCapacity).fill('C-MID') }];
 
   const triggerHaptic = () => {
     if (typeof window !== 'undefined' && 'vibrate' in navigator) navigator.vibrate(40);
@@ -113,7 +113,6 @@ export default function MatchdayApp() {
   const squadMaxSeconds = Math.max(...squad.map((p) => p.total_seconds_played || 0), 1);
   const lowestSeconds = pitchPlayers.length + subBench.length > 0 ? Math.min(...[...pitchPlayers, ...subBench].map((p) => p.seconds_played)) : 0;
   const attendedCount = squad.filter((p) => trainingData[p.id]?.status === 'attended').length;
-  const activeFormations = FORMATION_OPTIONS[basePitchCapacity] || [{ label: 'Standard Formation', roles: Array(basePitchCapacity).fill('C-MID') }];
 
   const loadSquad = async () => {
     setLoading(true);
@@ -124,7 +123,7 @@ export default function MatchdayApp() {
     if (matchesData) setMatchHistory(matchesData);
 
     if (playersData) {
-      const activeForm = FORMATION_OPTIONS[basePitchCapacity]?.[0]?.roles || ['GK', 'L-DEF', 'R-DEF', 'C-MID', 'C-STR'];
+      const activeRoles = FORMATION_OPTIONS[basePitchCapacity]?.[0]?.roles || ['GK', 'L-DEF', 'R-DEF', 'C-MID', 'C-STR'];
 
       const formatted: Player[] = playersData.map((p) => {
         const pStats = statsData?.filter((s) => s.player_id === p.id) || [];
@@ -148,20 +147,26 @@ export default function MatchdayApp() {
       setSquad(formatted);
       setAvailablePlayerIds(formatted.map((p) => p.id));
 
+      const initialMap: Record<string, string> = {};
       const gkPlayer = formatted.find((p) => p.preferred_position === 'Goalkeeper');
-      if (gkPlayer) setFixedGkId(gkPlayer.id);
+      if (gkPlayer) initialMap['GK'] = gkPlayer.id;
 
-      let starters: Player[] = [];
-      if (gkPlayer) starters.push({ ...gkPlayer, current_position: 'GK' });
-      const outfieldPool = formatted.filter((p) => !gkPlayer || p.id !== gkPlayer.id);
-
-      outfieldPool.slice(0, currentPitchCapacity - starters.length).forEach((p, i) => {
-        const role = activeForm[i + starters.length] || 'C-MID';
-        starters.push({ ...p, current_position: role });
+      const outfield = formatted.filter((p) => p.id !== gkPlayer?.id);
+      activeRoles.forEach((role, idx) => {
+        if (role !== 'GK' && outfield[idx - 1]) {
+          initialMap[role] = outfield[idx - 1].id;
+        }
       });
 
-      setStartingPlayerIds(starters.map((p) => p.id));
-      setPitchPlayers(starters.map((p) => ({ ...p, isStarter: true })));
+      setStarterMap(initialMap);
+
+      const starters: Player[] = [];
+      Object.entries(initialMap).forEach(([slot, pId]) => {
+        const found = formatted.find((p) => p.id === pId);
+        if (found) starters.push({ ...found, current_position: slot, isStarter: true });
+      });
+
+      setPitchPlayers(starters);
       setSubBench(formatted.filter((p) => !starters.some((s) => s.id === p.id)).map((p) => ({ ...p, isStarter: false, current_position: 'SUB' })));
 
       const initialTrain: Record<string, TrainingRecord> = {};
@@ -193,65 +198,61 @@ export default function MatchdayApp() {
     );
   };
 
-  const toggleStarterSelection = (id: string) => {
+  const assignStarterToSlot = (slot: string, playerId: string) => {
     triggerHaptic();
-    setStartingPlayerIds((prev) => {
-      if (prev.includes(id)) return prev.filter((pId) => pId !== id);
-      if (prev.length >= currentPitchCapacity) {
-        alert(`You can only select up to ${currentPitchCapacity} starters for this pitch capacity.`);
-        return prev;
-      }
-      return [...prev, id];
+    setStarterMap((prev) => {
+      const next = { ...prev };
+      Object.keys(next).forEach((key) => {
+        if (next[key] === playerId) delete next[key];
+      });
+      if (playerId) next[slot] = playerId;
+      return next;
     });
   };
 
-  const autoSelectStarters = () => {
+  const autoFillStarters = () => {
     triggerHaptic();
     const active = squad.filter((p) => availablePlayerIds.includes(p.id));
-    let selected: string[] = [];
+    const activeRoles = activeFormations[formationIndex]?.roles || ['GK', 'L-DEF', 'R-DEF', 'C-MID', 'C-STR'];
+    const nextMap: Record<string, string> = {};
 
-    if (fixedGkId && active.some((p) => p.id === fixedGkId)) {
-      selected.push(fixedGkId);
-    }
+    const gk = active.find((p) => p.preferred_position === 'Goalkeeper') || active[0];
+    if (gk && activeRoles.includes('GK')) nextMap['GK'] = gk.id;
 
-    const remainingNeeded = currentPitchCapacity - selected.length;
-    const outfieldPool = active.filter((p) => !selected.includes(p.id));
-    selected = [...selected, ...outfieldPool.slice(0, remainingNeeded).map((p) => p.id)];
-    setStartingPlayerIds(selected);
+    const remaining = active.filter((p) => p.id !== gk?.id);
+    let rIdx = 0;
+    activeRoles.forEach((role) => {
+      if (role !== 'GK' && remaining[rIdx]) {
+        nextMap[role] = remaining[rIdx].id;
+        rIdx++;
+      }
+    });
+
+    setStarterMap(nextMap);
   };
 
   const handleGenerateMatchPlan = () => {
     triggerHaptic();
     const active = squad.filter((p) => availablePlayerIds.includes(p.id));
-    if (active.length <= currentPitchCapacity) return;
+    const activeRoles = activeFormations[formationIndex]?.roles || ['GK', 'L-DEF', 'R-DEF', 'C-MID', 'C-STR'];
 
-    let starters = active.filter((p) => startingPlayerIds.includes(p.id));
-    if (starters.length < currentPitchCapacity) {
-      const fillIn = active.filter((p) => !startingPlayerIds.includes(p.id));
-      starters = [...starters, ...fillIn.slice(0, currentPitchCapacity - starters.length)];
-    }
+    const starterList: Player[] = [];
+    Object.entries(starterMap).forEach(([slot, pId]) => {
+      const player = active.find((p) => p.id === pId);
+      if (player) starterList.push({ ...player, current_position: slot, isStarter: true });
+    });
 
-    const bench = active.filter((p) => !starters.some((s) => s.id === p.id));
-    const activeForm = FORMATION_OPTIONS[basePitchCapacity]?.[formationIndex]?.roles || ['GK', 'L-DEF', 'R-DEF', 'C-MID', 'C-STR'];
+    const benchList = active
+      .filter((p) => !starterList.some((s) => s.id === p.id))
+      .map((p) => ({ ...p, isStarter: false, current_position: 'SUB' }));
 
-    const starterPitch = starters.map((p, idx) => ({
-      ...p,
-      isStarter: true,
-      current_position: activeForm[idx] || 'C-MID',
-    }));
-    const benchPlayers = bench.map((p) => ({ ...p, isStarter: false, current_position: 'SUB' }));
-
-    setPitchPlayers(starterPitch);
-    setSubBench(benchPlayers);
-
-    const plan: SubPlanStep[] = [];
     const totalMatchMins = halfMinutes * 2;
+    const plan: SubPlanStep[] = [];
 
-    const gkPlayer = starterPitch.find((p) => p.current_position === 'GK' || p.id === fixedGkId);
-    const gkIdToExclude = isGkLocked && gkPlayer ? gkPlayer.id : null;
+    const gkIdToExclude = isGkLocked && starterMap['GK'] ? starterMap['GK'] : null;
 
-    let currentOutfieldPitch = [...starterPitch.filter((p) => p.id !== gkIdToExclude)];
-    let currentBench = [...benchPlayers.filter((p) => p.id !== gkIdToExclude)];
+    let currentOutfieldPitch: Player[] = [...starterList.filter((p) => p.id !== gkIdToExclude)];
+    let currentBench: Player[] = [...benchList.filter((p) => p.id !== gkIdToExclude)];
     let interval = rotationIntervalMins;
 
     while (interval < totalMatchMins) {
@@ -281,6 +282,24 @@ export default function MatchdayApp() {
     }
 
     setGeneratedPlan(plan);
+  };
+
+  const handleCommitPlanToMatchday = () => {
+    triggerHaptic();
+    const active = squad.filter((p) => availablePlayerIds.includes(p.id));
+
+    const starterList: Player[] = [];
+    Object.entries(starterMap).forEach(([slot, pId]) => {
+      const player = active.find((p) => p.id === pId);
+      if (player) starterList.push({ ...player, current_position: slot, isStarter: true });
+    });
+
+    const benchList = active
+      .filter((p) => !starterList.some((s) => s.id === p.id))
+      .map((p) => ({ ...p, isStarter: false, current_position: 'SUB' }));
+
+    setPitchPlayers(starterList);
+    setSubBench(benchList);
     setActiveTab('matchday');
   };
 
@@ -406,6 +425,7 @@ export default function MatchdayApp() {
       const outgoing = newPitch[onPitchIndex];
       const incoming = newBench[benchIndex];
 
+      // DIRECT RE-ASSIGNMENT TO ASSIGNED TARGET SLOT
       newPitch[onPitchIndex] = { ...incoming, current_position: step.assignedPosition };
       newBench[benchIndex] = { ...outgoing, current_position: 'SUB' };
 
@@ -546,7 +566,7 @@ export default function MatchdayApp() {
       <div className="flex justify-between items-center mb-4 px-1">
         <h1 className="text-2xl font-black text-lime-400 flex items-center gap-2"><span>📋</span> CO-GAFFER</h1>
         <span className="text-[10px] bg-gray-900 border border-gray-800 text-lime-400 font-extrabold px-2.5 py-1 rounded-md">
-          GK LOCK & AUTO-PLAN READY
+          PREVIEW & TACTICAL COMMIT
         </span>
       </div>
 
@@ -627,18 +647,20 @@ export default function MatchdayApp() {
           handleUpdateSubStepPosition={handleUpdateSubStepPosition}
           availablePlayerIds={availablePlayerIds}
           togglePlayerAvailability={togglePlayerAvailability}
-          startingPlayerIds={startingPlayerIds}
-          toggleStarterSelection={toggleStarterSelection}
-          autoSelectStarters={autoSelectStarters}
+          starterMap={starterMap}
+          assignStarterToSlot={assignStarterToSlot}
+          autoFillStarters={autoFillStarters}
           rotationIntervalMins={rotationIntervalMins}
           setRotationIntervalMins={setRotationIntervalMins}
-          subsPerBatch={subsPerBatch}
-          setSubsPerBatch={setSubsPerBatch}
           getProjectedMinutes={getProjectedMinutes}
           handleGenerateMatchPlan={handleGenerateMatchPlan}
+          handleCommitPlanToMatchday={handleCommitPlanToMatchday}
           currentPitchCapacity={currentPitchCapacity}
           isGkLocked={isGkLocked}
           setIsGkLocked={setIsGkLocked}
+          activeFormations={activeFormations}
+          formationIndex={formationIndex}
+          setFormationIndex={setFormationIndex}
         />
       )}
 

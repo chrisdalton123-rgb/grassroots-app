@@ -22,33 +22,35 @@ type Props = {
   handleUpdateSubStepPosition: (stepId: string, newPosition: string) => void;
   availablePlayerIds: string[];
   togglePlayerAvailability: (id: string) => void;
-  startingPlayerIds: string[];
-  toggleStarterSelection: (id: string) => void;
-  autoSelectStarters: () => void;
+  starterMap: Record<string, string>; // slot -> playerId
+  assignStarterToSlot: (slot: string, playerId: string) => void;
+  autoFillStarters: () => void;
   rotationIntervalMins: number;
   setRotationIntervalMins: (mins: number) => void;
-  subsPerBatch: number;
-  setSubsPerBatch: (batch: number) => void;
   getProjectedMinutes: () => (Player & { projectedMins: number })[];
   handleGenerateMatchPlan: () => void;
+  handleCommitPlanToMatchday: () => void;
   currentPitchCapacity: number;
   isGkLocked: boolean;
   setIsGkLocked: (val: boolean) => void;
+  activeFormations: { label: string; roles: string[] }[];
+  formationIndex: number;
+  setFormationIndex: (idx: number) => void;
 };
 
 export default function PlannerTab(props: Props) {
   const activeSquad = props.squad.filter((p) => props.availablePlayerIds.includes(p.id));
   const totalMatchMinutes = props.halfMinutes * 2;
-  const recommendedIntervals = Math.floor(totalMatchMinutes / props.rotationIntervalMins);
+  const currentSlots = props.activeFormations[props.formationIndex]?.roles || props.positionSlots.slice(0, props.currentPitchCapacity);
 
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-xl font-black text-lime-400">Pre-Match Strategy Planner</h1>
 
-      {/* MATCH DURATION & AUTOMATED CALCULATION PARAMETERS */}
+      {/* MATCH HALVES & ROTATION INTERVAL */}
       <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md">
         <label className="block text-xs font-bold text-lime-400 mb-2 uppercase tracking-wider">
-          ⏱️ Match Halves ({props.halfMinutes}m halves = {totalMatchMinutes}m total)
+          ⏱️ Match Duration ({props.halfMinutes}m halves = {totalMatchMinutes}m total)
         </label>
         <div className="flex gap-2 mb-3">
           {[20, 25, 30, 35].map((mins) => (
@@ -69,8 +71,10 @@ export default function PlannerTab(props: Props) {
 
         <div className="pt-3 border-t border-gray-800 flex justify-between items-center text-xs">
           <div>
-            <span className="text-gray-300 font-bold block">Rotation Interval:</span>
-            <span className="text-[10px] text-gray-500 font-mono">{recommendedIntervals} rotation windows</span>
+            <span className="text-gray-300 font-bold block">Rotate Outfield Players Every:</span>
+            <span className="text-[10px] text-gray-500 font-mono">
+              {Math.floor(totalMatchMinutes / props.rotationIntervalMins)} sub windows per match
+            </span>
           </div>
           <div className="flex items-center gap-2">
             <input
@@ -84,49 +88,119 @@ export default function PlannerTab(props: Props) {
         </div>
       </div>
 
-      {/* GOALKEEPER FULL MATCH LOCK TOGGLE */}
-      <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md flex justify-between items-center">
-        <div>
-          <span className="text-xs font-black text-lime-400 block">🧤 LOCK GOALKEEPER FULL MATCH</span>
-          <span className="text-[10px] text-gray-400 block mt-0.5">
-            {props.isGkLocked ? 'GK excluded from rotation loops' : 'GK rotates like outfield players'}
-          </span>
-        </div>
-        <button
-          type="button"
-          onClick={() => props.setIsGkLocked(!props.isGkLocked)}
-          className={`px-3.5 py-2 font-black text-xs rounded-xl transition-all min-h-[40px] ${
-            props.isGkLocked
-              ? 'bg-lime-500 text-black border border-lime-400'
-              : 'bg-black text-gray-400 border border-gray-800'
-          }`}
-        >
-          {props.isGkLocked ? 'LOCKED (FULL MATCH)' : 'ROTATE GK'}
-        </button>
-      </div>
-
-      {/* AUTOMATED CALCULATION & EQUAL-TIME ENGINE */}
-      <div className="bg-gray-900/90 p-4 rounded-2xl border border-lime-500/30 shadow-md">
-        <div className="flex justify-between items-center mb-2">
-          <h2 className="text-xs uppercase tracking-widest text-lime-400 font-black flex items-center gap-1.5">
-            <span>⚡ Equal-Play Auto Calculator</span>
-          </h2>
-          <span className="text-[10px] bg-lime-500/20 text-lime-400 px-2 py-0.5 rounded font-mono font-bold">
-            FA Rotation
-          </span>
-        </div>
-
-        <div className="bg-black p-3 rounded-xl border border-gray-800 text-xs flex flex-col gap-1.5 mb-3">
-          <div className="flex justify-between font-mono text-[11px]">
-            <span className="text-gray-400">Total Match Slots:</span>
-            <span className="text-white font-bold">{props.currentPitchCapacity * totalMatchMinutes} player-minutes</span>
-          </div>
-          <div className="flex justify-between font-mono text-[11px]">
-            <span className="text-gray-400">Target Time per Player:</span>
-            <span className="text-lime-400 font-bold">
-              ~{Math.round((props.currentPitchCapacity * totalMatchMinutes) / (activeSquad.length || 1))} mins
+      {/* GK LOCK & FORMATION SETTINGS */}
+      <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md flex flex-col gap-3">
+        <div className="flex justify-between items-center">
+          <div>
+            <span className="text-xs font-black text-lime-400 block">🧤 LOCK GOALKEEPER FULL MATCH</span>
+            <span className="text-[10px] text-gray-400 block mt-0.5">
+              {props.isGkLocked ? 'GK stays in goal (excluded from rotation)' : 'GK rotates into outfield pool'}
             </span>
           </div>
+          <button
+            type="button"
+            onClick={() => props.setIsGkLocked(!props.isGkLocked)}
+            className={`px-3.5 py-2 font-black text-xs rounded-xl transition-all min-h-[40px] ${
+              props.isGkLocked
+                ? 'bg-lime-500 text-black border border-lime-400'
+                : 'bg-black text-gray-400 border border-gray-800'
+            }`}
+          >
+            {props.isGkLocked ? 'LOCKED (FULL MATCH)' : 'ROTATE GK'}
+          </button>
+        </div>
+
+        {props.activeFormations.length > 0 && (
+          <div className="pt-3 border-t border-gray-800 flex justify-between items-center text-xs">
+            <span className="text-gray-300 font-bold">Tactical Formation:</span>
+            <select
+              value={props.formationIndex}
+              onChange={(e) => props.setFormationIndex(parseInt(e.target.value, 10))}
+              className="bg-black border border-gray-800 text-lime-400 font-bold text-xs p-2 rounded-xl focus:outline-none"
+            >
+              {props.activeFormations.map((f, i) => (
+                <option key={i} value={i}>{f.label}</option>
+              ))}
+            </select>
+          </div>
+        )}
+      </div>
+
+      {/* SQUAD ATTENDANCE & POSITION-BY-POSITION STARTERS */}
+      <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md">
+        <div className="flex justify-between items-center mb-3">
+          <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold">
+            📋 1. Select Position Starters
+          </h2>
+          <button
+            type="button"
+            onClick={props.autoFillStarters}
+            className="text-[10px] bg-lime-500/20 text-lime-400 border border-lime-500/40 px-2.5 py-1.5 rounded-lg font-bold hover:bg-lime-500 hover:text-black transition-all"
+          >
+            ⚡ AUTO-FILL STARTERS
+          </button>
+        </div>
+
+        <div className="flex flex-col gap-2.5 mb-4">
+          {currentSlots.map((slot, idx) => (
+            <div key={`${slot}-${idx}`} className="bg-black p-2.5 rounded-xl border border-gray-800 flex items-center justify-between gap-2">
+              <span className="text-xs font-black text-amber-400 bg-amber-500/10 border border-amber-500/30 px-2.5 py-1 rounded-lg shrink-0 min-w-[70px] text-center">
+                {slot}
+              </span>
+              <select
+                value={props.starterMap[slot] || ''}
+                onChange={(e) => props.assignStarterToSlot(slot, e.target.value)}
+                className="bg-gray-950 border border-gray-800 text-xs font-bold text-white p-2 rounded-xl flex-1 focus:outline-none focus:border-lime-400"
+              >
+                <option value="">Select Starter for {slot}</option>
+                {activeSquad.map((p) => (
+                  <option key={p.id} value={p.id}>
+                    #{p.squad_number} {p.name} ({p.preferred_position})
+                  </option>
+                ))}
+              </select>
+            </div>
+          ))}
+        </div>
+
+        {/* SQUAD ATTENDANCE TOGGLES */}
+        <div className="pt-3 border-t border-gray-800">
+          <span className="text-[11px] font-bold text-gray-400 block mb-2 uppercase">Squad Attendance:</span>
+          <div className="grid grid-cols-2 gap-2">
+            {props.squad.map((player) => {
+              const isAvailable = props.availablePlayerIds.includes(player.id);
+
+              return (
+                <button
+                  key={player.id}
+                  type="button"
+                  onClick={() => props.togglePlayerAvailability(player.id)}
+                  className={`p-2 rounded-xl border text-xs font-bold flex items-center justify-between transition-all ${
+                    isAvailable
+                      ? 'bg-black border-gray-800 text-white'
+                      : 'bg-gray-950 border-gray-900 text-gray-600 line-through'
+                  }`}
+                >
+                  <span className="truncate max-w-[110px]">#{player.squad_number} {player.name}</span>
+                  <span className={`text-[10px] font-black px-1.5 py-0.5 rounded ${isAvailable ? 'bg-emerald-500 text-black' : 'bg-gray-800 text-gray-500'}`}>
+                    {isAvailable ? 'PRESENT' : 'ABSENT'}
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        </div>
+      </div>
+
+      {/* AUTO CALCULATE BUTTON */}
+      <div className="bg-gray-900/90 p-4 rounded-2xl border border-lime-500/30 shadow-md flex flex-col gap-3">
+        <div>
+          <h2 className="text-xs uppercase tracking-widest text-lime-400 font-black">
+            ⚡ 2. Auto-Calculate Rotation Schedule
+          </h2>
+          <p className="text-[11px] text-gray-400 mt-1">
+            Generates equal-time substitution steps based on your selected starters and positions.
+          </p>
         </div>
 
         <button
@@ -134,17 +208,19 @@ export default function PlannerTab(props: Props) {
           onClick={props.handleGenerateMatchPlan}
           className="w-full bg-lime-500 text-black font-black p-3.5 rounded-xl text-xs active:scale-95 transition-all shadow-md min-h-[48px]"
         >
-          ⚡ AUTO-CALCULATE FULL MATCH SUB SCHEDULE
+          ⚡ CALCULATE ROTATION SCHEDULE PREVIEW
         </button>
       </div>
 
-      {/* SCHEDULED SUBS LIST WITH EDITABLE DESTINATION POSITIONS */}
+      {/* EDITABLE SUB SCHEDULE PREVIEW */}
       {props.generatedPlan.length > 0 && (
-        <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md">
-          <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold mb-3 flex justify-between items-center">
-            <span>📋 Auto-Generated Substitutions ({props.generatedPlan.length})</span>
-            <span className="text-[10px] text-gray-400 font-normal">Select target slot to reassign</span>
-          </h2>
+        <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md flex flex-col gap-3">
+          <div className="flex justify-between items-center">
+            <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold">
+              📋 3. Review & Reassign Tactical Slots ({props.generatedPlan.length})
+            </h2>
+            <span className="text-[10px] text-gray-400">Modify target slot for incoming sub</span>
+          </div>
 
           <div className="flex flex-col gap-2.5">
             {props.generatedPlan.map((step) => (
@@ -164,12 +240,12 @@ export default function PlannerTab(props: Props) {
                   </button>
                 </div>
 
-                <div className="flex items-center gap-2 pt-1 border-t border-gray-900">
-                  <span className="text-[10px] text-gray-400 font-bold uppercase">Assign Target Slot:</span>
+                <div className="flex items-center gap-2 pt-2 border-t border-gray-900">
+                  <span className="text-[10px] text-gray-400 font-bold uppercase">Incoming Target Slot:</span>
                   <select
                     value={step.assignedPosition}
                     onChange={(e) => props.handleUpdateSubStepPosition(step.id, e.target.value)}
-                    className="bg-gray-900 border border-gray-700 text-lime-400 font-bold text-[11px] p-1.5 rounded-lg flex-1 focus:outline-none"
+                    className="bg-gray-950 border border-gray-800 text-lime-400 font-bold text-xs p-1.5 rounded-lg flex-1 focus:outline-none"
                   >
                     {props.positionSlots.map((pos) => (
                       <option key={pos} value={pos}>
@@ -181,67 +257,21 @@ export default function PlannerTab(props: Props) {
               </div>
             ))}
           </div>
+
+          <button
+            type="button"
+            onClick={props.handleCommitPlanToMatchday}
+            className="w-full bg-emerald-500 hover:bg-emerald-400 text-black font-black p-4 rounded-2xl text-xs active:scale-95 transition-all shadow-lg min-h-[48px] mt-2"
+          >
+            🚀 COMMIT PLAN & GO TO MATCHDAY PITCH BOARD
+          </button>
         </div>
       )}
 
-      {/* STARTERS & AVAILABILITY */}
-      <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md">
-        <div className="flex justify-between items-center mb-3">
-          <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold">
-            👥 Starters ({props.startingPlayerIds.length}/{props.currentPitchCapacity})
-          </h2>
-          <button
-            type="button"
-            onClick={props.autoSelectStarters}
-            className="text-[10px] bg-lime-500/20 text-lime-400 border border-lime-500/40 px-2.5 py-1 rounded-lg font-bold"
-          >
-            ⚡ AUTO SELECT STARTERS
-          </button>
-        </div>
-
-        <div className="flex flex-col gap-2">
-          {props.squad.map((player) => {
-            const isAvailable = props.availablePlayerIds.includes(player.id);
-            const isStarter = props.startingPlayerIds.includes(player.id);
-
-            return (
-              <div key={player.id} className="p-2.5 bg-black rounded-xl border border-gray-800 flex justify-between items-center text-xs">
-                <div className="flex items-center gap-2">
-                  <button
-                    type="button"
-                    onClick={() => props.togglePlayerAvailability(player.id)}
-                    className={`w-6 h-6 rounded-lg text-xs font-black flex items-center justify-center ${
-                      isAvailable ? 'bg-emerald-500 text-black' : 'bg-gray-800 text-gray-500'
-                    }`}
-                  >
-                    {isAvailable ? '✓' : '✕'}
-                  </button>
-                  <span className={`font-extrabold ${isAvailable ? 'text-white' : 'text-gray-600 line-through'}`}>
-                    #{player.squad_number} {player.name}
-                  </span>
-                </div>
-
-                {isAvailable && (
-                  <button
-                    type="button"
-                    onClick={() => props.toggleStarterSelection(player.id)}
-                    className={`px-3 py-1.5 rounded-lg text-[10px] font-black transition-all ${
-                      isStarter ? 'bg-lime-500 text-black' : 'bg-gray-900 text-gray-400 border border-gray-800'
-                    }`}
-                  >
-                    {isStarter ? '🚨 STARTER' : 'SUB BENCH'}
-                  </button>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      </div>
-
-      {/* MANUAL SINGLE SUB STEP ENTRY */}
+      {/* MANUAL SINGLE SUB ADDITION */}
       <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md">
         <h2 className="text-xs font-black text-lime-400 uppercase tracking-wider mb-2">
-          ➕ Add Manual Scheduled Sub
+          ➕ Add Manual Scheduled Sub Step
         </h2>
         <div className="flex flex-col gap-2.5">
           <div className="flex gap-2">

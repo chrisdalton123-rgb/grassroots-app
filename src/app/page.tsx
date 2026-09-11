@@ -237,7 +237,7 @@ export default function MatchdayApp() {
     setStarterMap(nextMap);
   };
 
-  // ROTATION ENGINE WITH DYNAMIC ALTERNATING BATCH SUPPORT
+  // TRUE ADAPTIVE MATHEMATICAL DYNAMIC ROTATION ENGINE
   const handleGenerateMatchPlan = () => {
     triggerHaptic();
     const active = squad.filter((p) => availablePlayerIds.includes(p.id));
@@ -251,6 +251,7 @@ export default function MatchdayApp() {
     let currentPitch = active.filter((p) => starterIds.includes(p.id));
     let currentBench = active.filter((p) => !starterIds.includes(p.id));
 
+    const outfieldSlots = gkStrategy === 'full' ? Math.max(1, currentPitchCapacity - 1) : currentPitchCapacity;
     const minsLogged: Record<string, number> = {};
     const outfieldMinsLogged: Record<string, number> = {};
     const continuousBenchMins: Record<string, number> = {};
@@ -300,11 +301,6 @@ export default function MatchdayApp() {
         let eligibleOn = currentBench.filter((p) => (gkStrategy === 'full' ? p.id !== halfOneGk : p.id !== activeGkId));
 
         if (eligibleOff.length > 0 && eligibleOn.length > 0) {
-          const windowIndex = Math.floor(m / rotationIntervalMins);
-          const targetBatchSize = subsPerBatch === 'dynamic' 
-            ? (windowIndex % 2 !== 0 ? 3 : 2) 
-            : subsPerBatch;
-
           eligibleOn.sort((a, b) => {
             const aIsOffDutyGk = (a.id === halfOneGk || a.id === halfTwoGk) && outfieldMinsLogged[a.id] < 10;
             const bIsOffDutyGk = (b.id === halfOneGk || b.id === halfTwoGk) && outfieldMinsLogged[b.id] < 10;
@@ -319,7 +315,16 @@ export default function MatchdayApp() {
 
           eligibleOff.sort((a, b) => minsLogged[b.id] - minsLogged[a.id]);
 
-          const swapsToMake = Math.min(targetBatchSize, eligibleOff.length, eligibleOn.length);
+          const remainingWindows = Math.ceil((totalMatchMins - m) / rotationIntervalMins);
+          let calculatedBatch = Math.ceil(eligibleOn.length / Math.max(1, remainingWindows));
+          
+          if (subsPerBatch === 'dynamic') {
+            calculatedBatch = Math.max(1, Math.min(calculatedBatch, outfieldSlots, eligibleOn.length));
+          } else {
+            calculatedBatch = subsPerBatch;
+          }
+
+          const swapsToMake = Math.min(calculatedBatch, eligibleOff.length, eligibleOn.length);
 
           for (let b = 0; b < swapsToMake; b++) {
             const outgoing = eligibleOff[b];
@@ -420,6 +425,7 @@ export default function MatchdayApp() {
     if (active.length === 0) return [];
 
     const totalMatchMins = halfMinutes * 2;
+    const outfieldSlots = gkStrategy === 'full' ? Math.max(1, currentPitchCapacity - 1) : currentPitchCapacity;
     const minsMap: Record<string, number> = {};
     const outfieldMinsMap: Record<string, number> = {};
     const benchMinsMap: Record<string, number> = {};
@@ -461,11 +467,6 @@ export default function MatchdayApp() {
         let eligibleOn = currentBench.filter((p) => (gkStrategy === 'full' ? p.id !== halfOneGk : p.id !== activeGkId));
 
         if (eligibleOff.length > 0 && eligibleOn.length > 0) {
-          const windowIndex = Math.floor(m / rotationIntervalMins);
-          const targetBatchSize = subsPerBatch === 'dynamic' 
-            ? (windowIndex % 2 !== 0 ? 3 : 2) 
-            : subsPerBatch;
-
           eligibleOn.sort((a, b) => {
             const aIsOffDutyGk = (a.id === halfOneGk || a.id === halfTwoGk) && outfieldMinsMap[a.id] < 10;
             const bIsOffDutyGk = (b.id === halfOneGk || b.id === halfTwoGk) && outfieldMinsMap[b.id] < 10;
@@ -480,7 +481,16 @@ export default function MatchdayApp() {
 
           eligibleOff.sort((a, b) => minsMap[b.id] - minsMap[a.id]);
 
-          const swapsToMake = Math.min(targetBatchSize, eligibleOff.length, eligibleOn.length);
+          const remainingWindows = Math.ceil((totalMatchMins - m) / rotationIntervalMins);
+          let calculatedBatch = Math.ceil(eligibleOn.length / Math.max(1, remainingWindows));
+          
+          if (subsPerBatch === 'dynamic') {
+            calculatedBatch = Math.max(1, Math.min(calculatedBatch, outfieldSlots, eligibleOn.length));
+          } else {
+            calculatedBatch = subsPerBatch;
+          }
+
+          const swapsToMake = Math.min(calculatedBatch, eligibleOff.length, eligibleOn.length);
 
           for (let b = 0; b < swapsToMake; b++) {
             const outP = eligibleOff[b];
@@ -701,7 +711,7 @@ export default function MatchdayApp() {
       <div className="flex justify-between items-center mb-4 px-1">
         <h1 className="text-2xl font-black text-lime-400 flex items-center gap-2"><span>📋</span> CO-GAFFER</h1>
         <span className="text-[10px] bg-gray-900 border border-gray-800 text-lime-400 font-extrabold px-2.5 py-1 rounded-md">
-          DYNAMIC BATCHING READY
+          TRUE ADAPTIVE BATCHING
         </span>
       </div>
 

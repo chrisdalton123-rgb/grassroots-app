@@ -277,7 +277,7 @@ export default function PlannerTab(props: Props) {
           onClick={props.handleGenerateMatchPlan}
           className="w-full bg-lime-500 text-black font-black p-3.5 rounded-xl text-xs active:scale-95 transition-all shadow-md min-h-[48px]"
         >
-          ⚡ CALCULATE MULTI-SUB ROTATION SCHEDULE
+          ⚡ CALCULATE EQUAL PLAY PLAN
         </button>
       </div>
 

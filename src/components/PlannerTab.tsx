@@ -46,16 +46,20 @@ export default function PlannerTab(props: Props) {
   const currentSlots = props.activeFormations[props.formationIndex]?.roles || props.positionSlots.slice(0, props.currentPitchCapacity);
   const projectedList = props.getProjectedMinutes();
 
+  const outfieldCount = props.gkStrategy === 'full' ? Math.max(1, activeSquad.length - 1) : activeSquad.length;
+  const outfieldSlots = props.gkStrategy === 'full' ? Math.max(1, props.currentPitchCapacity - 1) : props.currentPitchCapacity;
+  const targetOutfieldMins = Math.round((outfieldSlots * totalMatchMinutes) / outfieldCount);
+
   return (
     <div className="flex flex-col gap-4">
       <h1 className="text-xl font-black text-lime-400">Pre-Match Strategy Planner</h1>
 
-      {/* MATCH HALVES & ROTATION INTERVAL */}
+      {/* MATCH HALVES */}
       <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md">
         <label className="block text-xs font-bold text-lime-400 mb-2 uppercase tracking-wider">
           ⏱️ Match Duration ({props.halfMinutes}m halves = {totalMatchMinutes}m total)
         </label>
-        <div className="flex gap-2 mb-3">
+        <div className="flex gap-2">
           {[20, 25, 30, 35].map((mins) => (
             <button
               key={mins}
@@ -71,27 +75,9 @@ export default function PlannerTab(props: Props) {
             </button>
           ))}
         </div>
-
-        <div className="pt-3 border-t border-gray-800 flex justify-between items-center text-xs">
-          <div>
-            <span className="text-gray-300 font-bold block">Rotate Outfield Every:</span>
-            <span className="text-[10px] text-gray-500 font-mono">
-              {Math.floor(totalMatchMinutes / props.rotationIntervalMins)} sub windows per match
-            </span>
-          </div>
-          <div className="flex items-center gap-2">
-            <input
-              type="number"
-              value={props.rotationIntervalMins}
-              onChange={(e) => props.setRotationIntervalMins(Math.max(1, parseInt(e.target.value, 10) || 5))}
-              className="bg-black border border-gray-800 text-lime-400 font-bold p-1.5 w-16 text-center rounded-lg"
-            />
-            <span className="text-gray-400 font-bold">mins</span>
-          </div>
-        </div>
       </div>
 
-      {/* GOALKEEPER STRATEGY SELECTOR (FULL MATCH / HALF & HALF / ROTATE) */}
+      {/* GOALKEEPER STRATEGY SELECTOR */}
       <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md flex flex-col gap-3">
         <div>
           <span className="text-xs font-black text-lime-400 block uppercase">🧤 Goalkeeper Rotation Strategy</span>
@@ -149,7 +135,7 @@ export default function PlannerTab(props: Props) {
         )}
       </div>
 
-      {/* TACTICAL FORMATION SELECTION */}
+      {/* FORMATION OPTIONS */}
       {props.activeFormations.length > 0 && (
         <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md flex justify-between items-center text-xs">
           <span className="text-gray-300 font-bold">Tactical Formation:</span>
@@ -165,7 +151,7 @@ export default function PlannerTab(props: Props) {
         </div>
       )}
 
-      {/* POSITION-BY-POSITION STARTERS */}
+      {/* POSITION STARTERS */}
       <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold">
@@ -231,15 +217,35 @@ export default function PlannerTab(props: Props) {
         </div>
       </div>
 
-      {/* EQUAL-PLAY AUTO CALCULATOR */}
+      {/* EQUAL-PLAY AUTO CALCULATOR WITH INTERVAL TUNING */}
       <div className="bg-gray-900/90 p-4 rounded-2xl border border-lime-500/30 shadow-md flex flex-col gap-3">
-        <div>
+        <div className="flex justify-between items-center">
           <h2 className="text-xs uppercase tracking-widest text-lime-400 font-black">
             ⚡ 2. Equal-Play Auto Calculator
           </h2>
-          <p className="text-[11px] text-gray-400 mt-1">
-            Calculates substitutions to equalize total playing time across all available players.
-          </p>
+          <span className="text-[10px] bg-lime-500/20 text-lime-400 font-mono font-bold px-2 py-0.5 rounded">
+            Target: ~{targetOutfieldMins}m / player
+          </span>
+        </div>
+
+        <div className="bg-black p-3 rounded-xl border border-gray-800 text-xs flex flex-col gap-2">
+          <span className="text-[11px] font-bold text-gray-300">Test Rotation Window (Minutes):</span>
+          <div className="flex gap-1.5">
+            {[5, 6, 7, 8, 10].map((mins) => (
+              <button
+                key={mins}
+                type="button"
+                onClick={() => props.setRotationIntervalMins(mins)}
+                className={`flex-1 py-2 rounded-lg text-xs font-bold border transition-all ${
+                  props.rotationIntervalMins === mins
+                    ? 'bg-lime-500 text-black border-lime-400'
+                    : 'bg-gray-900 text-gray-400 border-gray-800'
+                }`}
+              >
+                {mins}m
+              </button>
+            ))}
+          </div>
         </div>
 
         <button
@@ -247,7 +253,7 @@ export default function PlannerTab(props: Props) {
           onClick={props.handleGenerateMatchPlan}
           className="w-full bg-lime-500 text-black font-black p-3.5 rounded-xl text-xs active:scale-95 transition-all shadow-md min-h-[48px]"
         >
-          ⚡ CALCULATE EQUAL PLAY PLAN
+          ⚡ CALCULATE ROTATION SCHEDULE PREVIEW
         </button>
       </div>
 

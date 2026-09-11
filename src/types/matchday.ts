@@ -43,6 +43,7 @@ export interface MatchGoal {
 export interface SavedMatch {
   id: string;
   created_at: string;
+  match_date?: string;
   opponent_name: string;
   age_group: string;
   our_score: number;

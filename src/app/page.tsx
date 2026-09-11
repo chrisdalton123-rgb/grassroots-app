@@ -74,6 +74,7 @@ export default function MatchdayApp() {
   const [gkStrategy, setGkStrategy] = useState<'full' | 'half' | 'rotate'>('full');
   const [halfTwoGkId, setHalfTwoGkId] = useState<string>('');
   const [rotationIntervalMins, setRotationIntervalMins] = useState<number>(7);
+  const [subsPerBatch, setSubsPerBatch] = useState<number>(2);
   const [generatedPlan, setGeneratedPlan] = useState<SubPlanStep[]>([]);
 
   const [goals, setGoals] = useState<MatchGoal[]>([]);
@@ -236,6 +237,7 @@ export default function MatchdayApp() {
     setStarterMap(nextMap);
   };
 
+  // MULTI-SUB BATCH ROTATION CALCULATOR
   const handleGenerateMatchPlan = () => {
     triggerHaptic();
     const active = squad.filter((p) => availablePlayerIds.includes(p.id));
@@ -287,23 +289,27 @@ export default function MatchdayApp() {
           eligibleOffFieldPitch.sort((a, b) => minsLogged[b.id] - minsLogged[a.id]);
           eligibleOnFieldBench.sort((a, b) => minsLogged[a.id] - minsLogged[b.id]);
 
-          const outgoing = eligibleOffFieldPitch[0];
-          const incoming = eligibleOnFieldBench[0];
+          const swapsToMake = Math.min(subsPerBatch, eligibleOffFieldPitch.length, eligibleOnFieldBench.length);
 
-          if (outgoing && incoming) {
-            plan.push({
-              id: Math.random().toString(),
-              minute: m,
-              offPlayerId: outgoing.id,
-              offPlayerName: `#${outgoing.squad_number} ${outgoing.name}`,
-              onPlayerId: incoming.id,
-              onPlayerName: `#${incoming.squad_number} ${incoming.name}`,
-              assignedPosition: starterMap['C-MID'] ? 'C-MID' : 'L-DEF',
-              status: 'pending',
-            });
+          for (let b = 0; b < swapsToMake; b++) {
+            const outgoing = eligibleOffFieldPitch[b];
+            const incoming = eligibleOnFieldBench[b];
 
-            currentPitch = currentPitch.map((p) => (p.id === outgoing.id ? incoming : p));
-            currentBench = currentBench.map((p) => (p.id === incoming.id ? outgoing : p));
+            if (outgoing && incoming) {
+              plan.push({
+                id: Math.random().toString(),
+                minute: m,
+                offPlayerId: outgoing.id,
+                offPlayerName: `#${outgoing.squad_number} ${outgoing.name}`,
+                onPlayerId: incoming.id,
+                onPlayerName: `#${incoming.squad_number} ${incoming.name}`,
+                assignedPosition: starterMap['C-MID'] ? 'C-MID' : 'L-DEF',
+                status: 'pending',
+              });
+
+              currentPitch = currentPitch.map((p) => (p.id === outgoing.id ? incoming : p));
+              currentBench = currentBench.map((p) => (p.id === incoming.id ? outgoing : p));
+            }
           }
         }
       }
@@ -338,6 +344,7 @@ export default function MatchdayApp() {
     );
   };
 
+  // MULTI-SUB PROJECTED MINUTES ENGINE
   const getProjectedMinutes = () => {
     const active = squad.filter((p) => availablePlayerIds.includes(p.id));
     if (active.length === 0) return [];
@@ -373,11 +380,17 @@ export default function MatchdayApp() {
           eligibleOff.sort((a, b) => minsMap[b.id] - minsMap[a.id]);
           eligibleOn.sort((a, b) => minsMap[a.id] - minsMap[b.id]);
 
-          const outP = eligibleOff[0];
-          const inP = eligibleOn[0];
+          const swapsToMake = Math.min(subsPerBatch, eligibleOff.length, eligibleOn.length);
 
-          currentPitch = currentPitch.map((p) => (p.id === outP.id ? inP : p));
-          currentBench = currentBench.map((p) => (p.id === inP.id ? outP : p));
+          for (let b = 0; b < swapsToMake; b++) {
+            const outP = eligibleOff[b];
+            const inP = eligibleOn[b];
+
+            if (outP && inP) {
+              currentPitch = currentPitch.map((p) => (p.id === outP.id ? inP : p));
+              currentBench = currentBench.map((p) => (p.id === inP.id ? outP : p));
+            }
+          }
         }
       }
     }
@@ -610,7 +623,7 @@ export default function MatchdayApp() {
       <div className="flex justify-between items-center mb-4 px-1">
         <h1 className="text-2xl font-black text-lime-400 flex items-center gap-2"><span>📋</span> CO-GAFFER</h1>
         <span className="text-[10px] bg-gray-900 border border-gray-800 text-lime-400 font-extrabold px-2.5 py-1 rounded-md">
-          COMPLETE & READY
+          MULTI-SUB BATCHING READY
         </span>
       </div>
 
@@ -696,6 +709,8 @@ export default function MatchdayApp() {
           autoFillStarters={autoFillStarters}
           rotationIntervalMins={rotationIntervalMins}
           setRotationIntervalMins={setRotationIntervalMins}
+          subsPerBatch={subsPerBatch}
+          setSubsPerBatch={setSubsPerBatch}
           getProjectedMinutes={getProjectedMinutes}
           handleGenerateMatchPlan={handleGenerateMatchPlan}
           handleCommitPlanToMatchday={handleCommitPlanToMatchday}

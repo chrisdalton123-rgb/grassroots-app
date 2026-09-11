@@ -27,6 +27,8 @@ type Props = {
   autoFillStarters: () => void;
   rotationIntervalMins: number;
   setRotationIntervalMins: (mins: number) => void;
+  subsPerBatch: number;
+  setSubsPerBatch: (batch: number) => void;
   getProjectedMinutes: () => (Player & { projectedMins: number })[];
   handleGenerateMatchPlan: () => void;
   handleCommitPlanToMatchday: () => void;
@@ -217,7 +219,7 @@ export default function PlannerTab(props: Props) {
         </div>
       </div>
 
-      {/* EQUAL-PLAY AUTO CALCULATOR WITH INTERVAL TUNING */}
+      {/* EQUAL-PLAY AUTO CALCULATOR WITH INTERVAL & BATCH TUNING */}
       <div className="bg-gray-900/90 p-4 rounded-2xl border border-lime-500/30 shadow-md flex flex-col gap-3">
         <div className="flex justify-between items-center">
           <h2 className="text-xs uppercase tracking-widest text-lime-400 font-black">
@@ -228,6 +230,28 @@ export default function PlannerTab(props: Props) {
           </span>
         </div>
 
+        {/* MULTI-SUB BATCH SIZE CONTROL */}
+        <div className="bg-black p-3 rounded-xl border border-gray-800 text-xs flex flex-col gap-2">
+          <span className="text-[11px] font-bold text-lime-400 uppercase">🔄 Players to Rotate Per Window (Batch Size):</span>
+          <div className="flex gap-2">
+            {[1, 2, 3].map((batch) => (
+              <button
+                key={batch}
+                type="button"
+                onClick={() => props.setSubsPerBatch(batch)}
+                className={`flex-1 py-2.5 rounded-xl text-xs font-black border transition-all ${
+                  props.subsPerBatch === batch
+                    ? 'bg-lime-500 text-black border-lime-400 shadow-md'
+                    : 'bg-gray-900 text-gray-400 border-gray-800'
+                }`}
+              >
+                {batch === 1 ? '1 Player' : `${batch} Players`}
+              </button>
+            ))}
+          </div>
+        </div>
+
+        {/* ROTATION INTERVAL SELECTION */}
         <div className="bg-black p-3 rounded-xl border border-gray-800 text-xs flex flex-col gap-2">
           <span className="text-[11px] font-bold text-gray-300">Test Rotation Window (Minutes):</span>
           <div className="flex gap-1.5">
@@ -253,7 +277,7 @@ export default function PlannerTab(props: Props) {
           onClick={props.handleGenerateMatchPlan}
           className="w-full bg-lime-500 text-black font-black p-3.5 rounded-xl text-xs active:scale-95 transition-all shadow-md min-h-[48px]"
         >
-          ⚡ CALCULATE ROTATION SCHEDULE PREVIEW
+          ⚡ CALCULATE MULTI-SUB ROTATION SCHEDULE
         </button>
       </div>
 

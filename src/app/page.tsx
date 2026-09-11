@@ -57,7 +57,7 @@ export default function MatchdayApp() {
   const [trainingData, setTrainingData] = useState<Record<string, TrainingRecord>>({});
   const [ageGroup, setAgeGroup] = useState<string>('U8-U9');
   const [basePitchCapacity, setBasePitchCapacity] = useState<number>(5);
-  const [halfMinutes, setHalfMinutes] = useState<number>(20);
+  const [halfMinutes, setHalfMinutes] = useState<number>(25);
   const [showSettings, setShowSettings] = useState<boolean>(false);
   const [viewMode, setViewMode] = useState<'pitch' | 'cards'>('pitch');
   const [formationIndex, setFormationIndex] = useState<number>(0);
@@ -71,7 +71,7 @@ export default function MatchdayApp() {
   const [planTargetPos, setPlanTargetPos] = useState<string>('C-MID');
   const [availablePlayerIds, setAvailablePlayerIds] = useState<string[]>([]);
   const [starterMap, setStarterMap] = useState<Record<string, string>>({});
-  const [gkStrategy, setGkStrategy] = useState<'full' | 'half' | 'rotate'>('half');
+  const [gkStrategy, setGkStrategy] = useState<'full' | 'half' | 'rotate'>('full');
   const [halfTwoGkId, setHalfTwoGkId] = useState<string>('');
   const [rotationIntervalMins, setRotationIntervalMins] = useState<number>(7);
   const [generatedPlan, setGeneratedPlan] = useState<SubPlanStep[]>([]);
@@ -79,7 +79,7 @@ export default function MatchdayApp() {
   const [goals, setGoals] = useState<MatchGoal[]>([]);
   const [playerOfTheMatch, setPlayerOfTheMatch] = useState<string | null>(null);
   const [opponentName, setOpponentName] = useState<string>('Opponent');
-  const [secondsRemaining, setSecondsRemaining] = useState<number>(20 * 60);
+  const [secondsRemaining, setSecondsRemaining] = useState<number>(25 * 60);
   const [isClockRunning, setIsClockRunning] = useState<boolean>(false);
   const [matchHistory, setMatchHistory] = useState<SavedMatch[]>([]);
 
@@ -346,20 +346,38 @@ export default function MatchdayApp() {
     const minsMap: Record<string, number> = {};
     active.forEach((p) => { minsMap[p.id] = 0; });
 
-    let currentPitch = active.filter((p) => Object.values(starterMap).includes(p.id));
-    let currentBench = active.filter((p) => !Object.values(starterMap).includes(p.id));
+    let starterIds = Object.values(starterMap);
+    let currentPitch = active.filter((p) => starterIds.includes(p.id));
+    let currentBench = active.filter((p) => !starterIds.includes(p.id));
+
+    let halfOneGk = starterMap['GK'] || active[0]?.id;
+    let halfTwoGk = gkStrategy === 'half' && halfTwoGkId ? halfTwoGkId : halfOneGk;
 
     for (let m = 1; m <= totalMatchMins; m++) {
       currentPitch.forEach((p) => { minsMap[p.id] = (minsMap[p.id] || 0) + 1; });
 
       if (m % rotationIntervalMins === 0 && m < totalMatchMins) {
-        if (currentBench.length > 0 && currentPitch.length > 0) {
-          const inc = currentBench.shift();
-          const out = currentPitch.shift();
-          if (inc && out) {
-            currentPitch.push(inc);
-            currentBench.push(out);
-          }
+        let eligibleOff = currentPitch.filter((p) => {
+          if (gkStrategy === 'full') return p.id !== halfOneGk;
+          if (gkStrategy === 'half') return m <= halfMinutes ? p.id !== halfOneGk : p.id !== halfTwoGk;
+          return true;
+        });
+
+        let eligibleOn = currentBench.filter((p) => {
+          if (gkStrategy === 'full') return p.id !== halfOneGk;
+          if (gkStrategy === 'half') return m <= halfMinutes ? p.id !== halfOneGk : p.id !== halfTwoGk;
+          return true;
+        });
+
+        if (eligibleOff.length > 0 && eligibleOn.length > 0) {
+          eligibleOff.sort((a, b) => minsMap[b.id] - minsMap[a.id]);
+          eligibleOn.sort((a, b) => minsMap[a.id] - minsMap[b.id]);
+
+          const outP = eligibleOff[0];
+          const inP = eligibleOn[0];
+
+          currentPitch = currentPitch.map((p) => (p.id === outP.id ? inP : p));
+          currentBench = currentBench.map((p) => (p.id === inP.id ? outP : p));
         }
       }
     }

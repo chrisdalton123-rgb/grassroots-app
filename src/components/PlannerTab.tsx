@@ -281,6 +281,66 @@ export default function PlannerTab(props: Props) {
         </button>
       </div>
 
+      {/* MANUAL SINGLE SUB STEP ENTRY */}
+      <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md">
+        <h2 className="text-xs font-black text-lime-400 uppercase tracking-wider mb-2">
+          ➕ Add Manual Scheduled Sub Step
+        </h2>
+        <div className="flex flex-col gap-2.5">
+          <div className="flex gap-2">
+            <select
+              value={props.planOffPlayerId}
+              onChange={(e) => props.setPlanOffPlayerId(e.target.value)}
+              className="bg-black border border-gray-800 text-xs font-bold text-white p-2.5 rounded-xl flex-1 focus:outline-none"
+            >
+              <option value="">Select OFF Player</option>
+              {activeSquad.map((p) => (
+                <option key={p.id} value={p.id}>#{p.squad_number} {p.name}</option>
+              ))}
+            </select>
+
+            <select
+              value={props.planOnPlayerId}
+              onChange={(e) => props.setPlanOnPlayerId(e.target.value)}
+              className="bg-black border border-gray-800 text-xs font-bold text-lime-400 p-2.5 rounded-xl flex-1 focus:outline-none"
+            >
+              <option value="">Select ON Player</option>
+              {activeSquad.map((p) => (
+                <option key={p.id} value={p.id}>#{p.squad_number} {p.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="flex gap-2 items-center">
+            <input
+              type="number"
+              value={props.planMinute}
+              onChange={(e) => props.setPlanMinute(parseInt(e.target.value, 10) || 1)}
+              className="bg-black border border-gray-800 text-xs font-bold text-amber-400 p-2.5 rounded-xl w-20 text-center focus:outline-none"
+              placeholder="Min"
+            />
+
+            <select
+              value={props.planTargetPos}
+              onChange={(e) => props.setPlanTargetPos(e.target.value)}
+              className="bg-black border border-gray-800 text-xs font-bold text-white p-2.5 rounded-xl flex-1 focus:outline-none"
+            >
+              {props.positionSlots.map((pos) => (
+                <option key={pos} value={pos}>Target Pos: {pos}</option>
+              ))}
+            </select>
+
+            <button
+              type="button"
+              onClick={props.handleAddCustomSubStep}
+              className="bg-lime-500 text-black font-black px-4 py-2.5 rounded-xl text-xs active:scale-95 transition-all"
+            >
+              + ADD
+            </button>
+          </div>
+        </div>
+      </div>
+
       {/* EDITABLE SCHEDULE PREVIEW BEFORE COMMIT */}
       {props.generatedPlan.length > 0 && (
         <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md flex flex-col gap-3">
@@ -336,66 +396,6 @@ export default function PlannerTab(props: Props) {
           </button>
         </div>
       )}
-
-      {/* MANUAL SINGLE SUB STEP ENTRY */}
-      <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md">
-        <h2 className="text-xs font-black text-lime-400 uppercase tracking-wider mb-2">
-          ➕ Add Manual Scheduled Sub Step
-        </h2>
-        <div className="flex flex-col gap-2.5">
-          <div className="flex gap-2">
-            <select
-              value={props.planOffPlayerId}
-              onChange={(e) => props.setPlanOffPlayerId(e.target.value)}
-              className="bg-black border border-gray-800 text-xs font-bold text-white p-2.5 rounded-xl flex-1"
-            >
-              <option value="">Select OFF Player</option>
-              {activeSquad.map((p) => (
-                <option key={p.id} value={p.id}>#{p.squad_number} {p.name}</option>
-              ))}
-            </select>
-
-            <select
-              value={props.planOnPlayerId}
-              onChange={(e) => props.setPlanOnPlayerId(e.target.value)}
-              className="bg-black border border-gray-800 text-xs font-bold text-lime-400 p-2.5 rounded-xl flex-1"
-            >
-              <option value="">Select ON Player</option>
-              {activeSquad.map((p) => (
-                <option key={p.id} value={p.id}>#{p.squad_number} {p.name}</option>
-              ))}
-            </select>
-          </div>
-
-          <div className="flex gap-2 items-center">
-            <input
-              type="number"
-              value={props.planMinute}
-              onChange={(e) => props.setPlanMinute(parseInt(e.target.value, 10) || 1)}
-              className="bg-black border border-gray-800 text-xs font-bold text-amber-400 p-2.5 rounded-xl w-20 text-center"
-              placeholder="Min"
-            />
-
-            <select
-              value={props.planTargetPos}
-              onChange={(e) => props.setPlanTargetPos(e.target.value)}
-              className="bg-black border border-gray-800 text-xs font-bold text-white p-2.5 rounded-xl flex-1"
-            >
-              {props.positionSlots.map((pos) => (
-                <option key={pos} value={pos}>Target Pos: {pos}</option>
-              ))}
-            </select>
-
-            <button
-              type="button"
-              onClick={props.handleAddCustomSubStep}
-              className="bg-lime-500 text-black font-black px-4 py-2.5 rounded-xl text-xs"
-            >
-              + ADD
-            </button>
-          </div>
-        </div>
-      </div>
 
       {/* PROJECTED MINUTES AUDIT BREAKDOWN */}
       {projectedList.length > 0 && (

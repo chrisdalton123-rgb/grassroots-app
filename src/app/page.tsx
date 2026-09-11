@@ -338,6 +338,30 @@ export default function MatchdayApp() {
     setGeneratedPlan(plan.sort((a, b) => a.minute - b.minute));
   };
 
+  const handleAddCustomSubStep = () => {
+    if (!planOffPlayerId || !planOnPlayerId) return;
+    const offP = squad.find((p) => p.id === planOffPlayerId);
+    const onP = squad.find((p) => p.id === planOnPlayerId);
+    if (!offP || !onP) return;
+
+    triggerHaptic();
+
+    const newStep: SubPlanStep = {
+      id: Math.random().toString(),
+      minute: planMinute,
+      offPlayerId: offP.id,
+      offPlayerName: `#${offP.squad_number} ${offP.name}`,
+      onPlayerId: onP.id,
+      onPlayerName: `#${onP.squad_number} ${onP.name}`,
+      assignedPosition: planTargetPos,
+      status: 'pending',
+    };
+
+    setGeneratedPlan((prev): SubPlanStep[] => [...prev, newStep].sort((a, b) => a.minute - b.minute));
+    setPlanOffPlayerId('');
+    setPlanOnPlayerId('');
+  };
+
   const handleCommitPlanToMatchday = () => {
     triggerHaptic();
     const active = squad.filter((p) => availablePlayerIds.includes(p.id));
@@ -614,28 +638,6 @@ export default function MatchdayApp() {
     window.open(`https://wa.me/?text=${encoded}`, '_blank');
   };
 
-  const handleAddCustomSubStep = () => {
-    if (!planOffPlayerId || !planOnPlayerId) return;
-    const offP = squad.find((p) => p.id === planOffPlayerId);
-    const onP = squad.find((p) => p.id === planOnPlayerId);
-    if (!offP || !onP) return;
-
-    triggerHaptic();
-
-    const newStep: SubPlanStep = {
-      id: Math.random().toString(),
-      minute: planMinute,
-      offPlayerId: offP.id,
-      offPlayerName: `#${offP.squad_number} ${offP.name}`,
-      onPlayerId: onP.id,
-      onPlayerName: `#${onP.squad_number} ${onP.name}`,
-      assignedPosition: planTargetPos,
-      status: 'pending',
-    };
-
-    setGeneratedPlan((prev): SubPlanStep[] => [...prev, newStep].sort((a, b) => a.minute - b.minute));
-  };
-
   const handleAddPlayer = async (e: React.FormEvent) => {
     e.preventDefault();
     if (!newName || !newNumber) return;
@@ -660,7 +662,7 @@ export default function MatchdayApp() {
       <div className="flex justify-between items-center mb-4 px-1">
         <h1 className="text-2xl font-black text-lime-400 flex items-center gap-2"><span>📋</span> CO-GAFFER</h1>
         <span className="text-[10px] bg-gray-900 border border-gray-800 text-lime-400 font-extrabold px-2.5 py-1 rounded-md">
-          GK 10M OUTFIELD GUARANTEE
+          MANUAL SUB ADDITION FIXED
         </span>
       </div>
 

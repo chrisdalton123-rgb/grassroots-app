@@ -360,7 +360,7 @@ export default function PlannerTab(props: Props) {
                     <span className="text-amber-400 font-mono font-bold">Min {step.minute}' — </span>
                     <span className="text-red-400 font-bold">OFF: {step.offPlayerName} </span>
                     <span className="text-lime-400 font-bold">ON: {step.onPlayerName}</span>
-                    {('isManual' in step && Boolean((step as SubPlanStep & { isManual?: boolean }).isManual)) && (
+                    {step.isManual && (
                       <span className="ml-2 text-[9px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded uppercase font-bold">
                         Manual
                       </span>

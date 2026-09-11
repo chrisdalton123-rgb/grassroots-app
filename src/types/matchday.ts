@@ -1,11 +1,10 @@
-export type Player = {
+export interface Player {
   id: string;
   name: string;
   squad_number: number;
   preferred_position: string;
   seconds_played: number;
   current_position: string;
-  isAvailable?: boolean;
   isInjured?: boolean;
   isActive?: boolean;
   isStarter?: boolean;
@@ -13,16 +12,16 @@ export type Player = {
   total_seconds_played?: number;
   total_goals?: number;
   total_potm?: number;
-};
+}
 
-export type TrainingRecord = {
+export interface TrainingRecord {
   playerId: string;
-  status: 'attended' | 'absent' | 'excused';
+  status: 'attended' | 'absent' | 'injured' | 'excused';
   effortRating: number;
-  notes: string;
-};
+  notes?: string;
+}
 
-export type SubPlanStep = {
+export interface SubPlanStep {
   id: string;
   minute: number;
   offPlayerId: string;
@@ -31,16 +30,17 @@ export type SubPlanStep = {
   onPlayerName: string;
   assignedPosition: string;
   status: 'pending' | 'completed';
-};
+  isManual?: boolean;
+}
 
-export type MatchGoal = {
+export interface MatchGoal {
   id: string;
   scorerName: string;
   minute: number;
   isOpponent: boolean;
-};
+}
 
-export type SavedMatch = {
+export interface SavedMatch {
   id: string;
   created_at: string;
   opponent_name: string;
@@ -48,6 +48,5 @@ export type SavedMatch = {
   our_score: number;
   opponent_score: number;
   player_of_the_match: string | null;
-  starting_lineup?: string[] | null;
-  match_date: string;
-};
+  starting_lineup: string[];
+}

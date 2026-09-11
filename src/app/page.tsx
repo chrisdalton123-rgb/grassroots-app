@@ -354,7 +354,7 @@ export default function MatchdayApp() {
 
     triggerHaptic();
 
-    const newStep: ExtendedSubPlanStep = {
+    const newStep: SubPlanStep = {
       id: Math.random().toString(),
       minute: planMinute,
       offPlayerId: offP.id,

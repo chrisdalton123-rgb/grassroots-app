@@ -22,7 +22,7 @@ type Props = {
   handleUpdateSubStepPosition: (stepId: string, newPosition: string) => void;
   availablePlayerIds: string[];
   togglePlayerAvailability: (id: string) => void;
-  starterMap: Record<string, string>; // slot -> playerId
+  starterMap: Record<string, string>;
   assignStarterToSlot: (slot: string, playerId: string) => void;
   autoFillStarters: () => void;
   rotationIntervalMins: number;
@@ -31,8 +31,10 @@ type Props = {
   handleGenerateMatchPlan: () => void;
   handleCommitPlanToMatchday: () => void;
   currentPitchCapacity: number;
-  isGkLocked: boolean;
-  setIsGkLocked: (val: boolean) => void;
+  gkStrategy: 'full' | 'half' | 'rotate';
+  setGkStrategy: (strategy: 'full' | 'half' | 'rotate') => void;
+  halfTwoGkId: string;
+  setHalfTwoGkId: (id: string) => void;
   activeFormations: { label: string; roles: string[] }[];
   formationIndex: number;
   setFormationIndex: (idx: number) => void;
@@ -42,6 +44,7 @@ export default function PlannerTab(props: Props) {
   const activeSquad = props.squad.filter((p) => props.availablePlayerIds.includes(p.id));
   const totalMatchMinutes = props.halfMinutes * 2;
   const currentSlots = props.activeFormations[props.formationIndex]?.roles || props.positionSlots.slice(0, props.currentPitchCapacity);
+  const projectedList = props.getProjectedMinutes();
 
   return (
     <div className="flex flex-col gap-4">
@@ -71,7 +74,7 @@ export default function PlannerTab(props: Props) {
 
         <div className="pt-3 border-t border-gray-800 flex justify-between items-center text-xs">
           <div>
-            <span className="text-gray-300 font-bold block">Rotate Outfield Players Every:</span>
+            <span className="text-gray-300 font-bold block">Rotate Outfield Every:</span>
             <span className="text-[10px] text-gray-500 font-mono">
               {Math.floor(totalMatchMinutes / props.rotationIntervalMins)} sub windows per match
             </span>
@@ -88,49 +91,85 @@ export default function PlannerTab(props: Props) {
         </div>
       </div>
 
-      {/* GK LOCK & FORMATION SETTINGS */}
+      {/* GOALKEEPER STRATEGY SELECTOR (FULL MATCH / HALF & HALF / ROTATE) */}
       <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md flex flex-col gap-3">
-        <div className="flex justify-between items-center">
-          <div>
-            <span className="text-xs font-black text-lime-400 block">🧤 LOCK GOALKEEPER FULL MATCH</span>
-            <span className="text-[10px] text-gray-400 block mt-0.5">
-              {props.isGkLocked ? 'GK stays in goal (excluded from rotation)' : 'GK rotates into outfield pool'}
-            </span>
-          </div>
+        <div>
+          <span className="text-xs font-black text-lime-400 block uppercase">🧤 Goalkeeper Rotation Strategy</span>
+          <span className="text-[10px] text-gray-400 block mt-0.5">
+            Configure how goalkeepers share playing time between the net and outfield.
+          </span>
+        </div>
+
+        <div className="flex gap-2">
           <button
             type="button"
-            onClick={() => props.setIsGkLocked(!props.isGkLocked)}
-            className={`px-3.5 py-2 font-black text-xs rounded-xl transition-all min-h-[40px] ${
-              props.isGkLocked
-                ? 'bg-lime-500 text-black border border-lime-400'
-                : 'bg-black text-gray-400 border border-gray-800'
+            onClick={() => props.setGkStrategy('full')}
+            className={`flex-1 py-2 rounded-xl text-[11px] font-bold border transition-all ${
+              props.gkStrategy === 'full' ? 'bg-lime-500 text-black border-lime-400' : 'bg-black border-gray-800 text-gray-400'
             }`}
           >
-            {props.isGkLocked ? 'LOCKED (FULL MATCH)' : 'ROTATE GK'}
+            FULL MATCH GK
+          </button>
+          <button
+            type="button"
+            onClick={() => props.setGkStrategy('half')}
+            className={`flex-1 py-2 rounded-xl text-[11px] font-bold border transition-all ${
+              props.gkStrategy === 'half' ? 'bg-lime-500 text-black border-lime-400' : 'bg-black border-gray-800 text-gray-400'
+            }`}
+          >
+            HALF & HALF GK
+          </button>
+          <button
+            type="button"
+            onClick={() => props.setGkStrategy('rotate')}
+            className={`flex-1 py-2 rounded-xl text-[11px] font-bold border transition-all ${
+              props.gkStrategy === 'rotate' ? 'bg-lime-500 text-black border-lime-400' : 'bg-black border-gray-800 text-gray-400'
+            }`}
+          >
+            FULL ROTATION
           </button>
         </div>
 
-        {props.activeFormations.length > 0 && (
-          <div className="pt-3 border-t border-gray-800 flex justify-between items-center text-xs">
-            <span className="text-gray-300 font-bold">Tactical Formation:</span>
+        {props.gkStrategy === 'half' && (
+          <div className="pt-2 border-t border-gray-800 flex justify-between items-center text-xs">
+            <span className="text-gray-300 font-bold">2nd Half GK:</span>
             <select
-              value={props.formationIndex}
-              onChange={(e) => props.setFormationIndex(parseInt(e.target.value, 10))}
-              className="bg-black border border-gray-800 text-lime-400 font-bold text-xs p-2 rounded-xl focus:outline-none"
+              value={props.halfTwoGkId}
+              onChange={(e) => props.setHalfTwoGkId(e.target.value)}
+              className="bg-black border border-gray-800 text-lime-400 font-bold text-xs p-2 rounded-xl focus:outline-none flex-1 max-w-[200px]"
             >
-              {props.activeFormations.map((f, i) => (
-                <option key={i} value={i}>{f.label}</option>
+              <option value="">Select 2nd Half GK</option>
+              {activeSquad.map((p) => (
+                <option key={p.id} value={p.id}>
+                  #{p.squad_number} {p.name}
+                </option>
               ))}
             </select>
           </div>
         )}
       </div>
 
-      {/* SQUAD ATTENDANCE & POSITION-BY-POSITION STARTERS */}
+      {/* TACTICAL FORMATION SELECTION */}
+      {props.activeFormations.length > 0 && (
+        <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md flex justify-between items-center text-xs">
+          <span className="text-gray-300 font-bold">Tactical Formation:</span>
+          <select
+            value={props.formationIndex}
+            onChange={(e) => props.setFormationIndex(parseInt(e.target.value, 10))}
+            className="bg-black border border-gray-800 text-lime-400 font-bold text-xs p-2 rounded-xl focus:outline-none"
+          >
+            {props.activeFormations.map((f, i) => (
+              <option key={i} value={i}>{f.label}</option>
+            ))}
+          </select>
+        </div>
+      )}
+
+      {/* POSITION-BY-POSITION STARTERS */}
       <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md">
         <div className="flex justify-between items-center mb-3">
           <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold">
-            📋 1. Select Position Starters
+            📋 1. Select Position Starters ({Object.keys(props.starterMap).length}/{props.currentPitchCapacity})
           </h2>
           <button
             type="button"
@@ -165,7 +204,7 @@ export default function PlannerTab(props: Props) {
 
         {/* SQUAD ATTENDANCE TOGGLES */}
         <div className="pt-3 border-t border-gray-800">
-          <span className="text-[11px] font-bold text-gray-400 block mb-2 uppercase">Squad Attendance:</span>
+          <span className="text-[11px] font-bold text-gray-400 block mb-2 uppercase">Squad Attendance ({activeSquad.length}):</span>
           <div className="grid grid-cols-2 gap-2">
             {props.squad.map((player) => {
               const isAvailable = props.availablePlayerIds.includes(player.id);
@@ -192,14 +231,14 @@ export default function PlannerTab(props: Props) {
         </div>
       </div>
 
-      {/* AUTO CALCULATE BUTTON */}
+      {/* EQUAL-PLAY AUTO CALCULATOR */}
       <div className="bg-gray-900/90 p-4 rounded-2xl border border-lime-500/30 shadow-md flex flex-col gap-3">
         <div>
           <h2 className="text-xs uppercase tracking-widest text-lime-400 font-black">
-            ⚡ 2. Auto-Calculate Rotation Schedule
+            ⚡ 2. Equal-Play Auto Calculator
           </h2>
           <p className="text-[11px] text-gray-400 mt-1">
-            Generates equal-time substitution steps based on your selected starters and positions.
+            Calculates substitutions to equalize total playing time across all available players.
           </p>
         </div>
 
@@ -208,18 +247,18 @@ export default function PlannerTab(props: Props) {
           onClick={props.handleGenerateMatchPlan}
           className="w-full bg-lime-500 text-black font-black p-3.5 rounded-xl text-xs active:scale-95 transition-all shadow-md min-h-[48px]"
         >
-          ⚡ CALCULATE ROTATION SCHEDULE PREVIEW
+          ⚡ CALCULATE EQUAL PLAY PLAN
         </button>
       </div>
 
-      {/* EDITABLE SUB SCHEDULE PREVIEW */}
+      {/* EDITABLE SCHEDULE PREVIEW BEFORE COMMIT */}
       {props.generatedPlan.length > 0 && (
         <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md flex flex-col gap-3">
           <div className="flex justify-between items-center">
             <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold">
-              📋 3. Review & Reassign Tactical Slots ({props.generatedPlan.length})
+              📋 3. Review & Adjust Rotation Schedule ({props.generatedPlan.length})
             </h2>
-            <span className="text-[10px] text-gray-400">Modify target slot for incoming sub</span>
+            <span className="text-[10px] text-gray-400">Reassign target pitch slot</span>
           </div>
 
           <div className="flex flex-col gap-2.5">
@@ -241,7 +280,7 @@ export default function PlannerTab(props: Props) {
                 </div>
 
                 <div className="flex items-center gap-2 pt-2 border-t border-gray-900">
-                  <span className="text-[10px] text-gray-400 font-bold uppercase">Incoming Target Slot:</span>
+                  <span className="text-[10px] text-gray-400 font-bold uppercase">Target Slot:</span>
                   <select
                     value={step.assignedPosition}
                     onChange={(e) => props.handleUpdateSubStepPosition(step.id, e.target.value)}
@@ -268,7 +307,7 @@ export default function PlannerTab(props: Props) {
         </div>
       )}
 
-      {/* MANUAL SINGLE SUB ADDITION */}
+      {/* MANUAL SINGLE SUB STEP ENTRY */}
       <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md">
         <h2 className="text-xs font-black text-lime-400 uppercase tracking-wider mb-2">
           ➕ Add Manual Scheduled Sub Step
@@ -328,15 +367,15 @@ export default function PlannerTab(props: Props) {
         </div>
       </div>
 
-      {/* PROJECTED MINUTES BREAKDOWN */}
-      {props.availablePlayerIds.length > 0 && (
+      {/* PROJECTED MINUTES AUDIT BREAKDOWN */}
+      {projectedList.length > 0 && (
         <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md">
           <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold mb-3 flex justify-between">
-            <span>📊 Projected Playing Time</span>
-            <span>{totalMatchMinutes}m Match</span>
+            <span>📊 Projected Minutes Audit</span>
+            <span>{totalMatchMinutes}m Total Match</span>
           </h2>
           <div className="grid grid-cols-2 gap-2">
-            {props.getProjectedMinutes().map((player) => (
+            {projectedList.map((player) => (
               <div key={player.id} className="p-3 bg-black rounded-xl border border-gray-800 flex justify-between items-center text-xs">
                 <span className="font-bold text-gray-300 truncate max-w-[100px]">
                   #{player.squad_number} {player.name}

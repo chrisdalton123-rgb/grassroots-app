@@ -70,10 +70,10 @@ export default function MatchdayApp() {
   const [planMinute, setPlanMinute] = useState<number>(7);
   const [planTargetPos, setPlanTargetPos] = useState<string>('C-MID');
   const [availablePlayerIds, setAvailablePlayerIds] = useState<string[]>([]);
-  const [starterMap, setStarterMap] = useState<Record<string, string>>({}); // slot -> playerId
-  const [isGkLocked, setIsGkLocked] = useState<boolean>(true);
+  const [starterMap, setStarterMap] = useState<Record<string, string>>({});
+  const [gkStrategy, setGkStrategy] = useState<'full' | 'half' | 'rotate'>('half');
+  const [halfTwoGkId, setHalfTwoGkId] = useState<string>('');
   const [rotationIntervalMins, setRotationIntervalMins] = useState<number>(7);
-  const [subsPerBatch, setSubsPerBatch] = useState<number>(1);
   const [generatedPlan, setGeneratedPlan] = useState<SubPlanStep[]>([]);
 
   const [goals, setGoals] = useState<MatchGoal[]>([]);
@@ -148,17 +148,22 @@ export default function MatchdayApp() {
       setAvailablePlayerIds(formatted.map((p) => p.id));
 
       const initialMap: Record<string, string> = {};
-      const gkPlayer = formatted.find((p) => p.preferred_position === 'Goalkeeper');
+      const gkPlayer = formatted.find((p) => p.preferred_position === 'Goalkeeper') || formatted[0];
       if (gkPlayer) initialMap['GK'] = gkPlayer.id;
 
       const outfield = formatted.filter((p) => p.id !== gkPlayer?.id);
-      activeRoles.forEach((role, idx) => {
-        if (role !== 'GK' && outfield[idx - 1]) {
-          initialMap[role] = outfield[idx - 1].id;
+      activeRoles.forEach((role) => {
+        if (role !== 'GK' && outfield.length > 0) {
+          const nextP = outfield.shift();
+          if (nextP) initialMap[role] = nextP.id;
         }
       });
 
       setStarterMap(initialMap);
+
+      if (outfield.length > 0) {
+        setHalfTwoGkId(outfield[0].id);
+      }
 
       const starters: Player[] = [];
       Object.entries(initialMap).forEach(([slot, pId]) => {
@@ -234,54 +239,77 @@ export default function MatchdayApp() {
   const handleGenerateMatchPlan = () => {
     triggerHaptic();
     const active = squad.filter((p) => availablePlayerIds.includes(p.id));
-    const activeRoles = activeFormations[formationIndex]?.roles || ['GK', 'L-DEF', 'R-DEF', 'C-MID', 'C-STR'];
-
-    const starterList: Player[] = [];
-    Object.entries(starterMap).forEach(([slot, pId]) => {
-      const player = active.find((p) => p.id === pId);
-      if (player) starterList.push({ ...player, current_position: slot, isStarter: true });
-    });
-
-    const benchList = active
-      .filter((p) => !starterList.some((s) => s.id === p.id))
-      .map((p) => ({ ...p, isStarter: false, current_position: 'SUB' }));
+    if (active.length === 0) return;
 
     const totalMatchMins = halfMinutes * 2;
     const plan: SubPlanStep[] = [];
 
-    const gkIdToExclude = isGkLocked && starterMap['GK'] ? starterMap['GK'] : null;
+    let starterIds = Object.values(starterMap);
+    let currentPitch = active.filter((p) => starterIds.includes(p.id));
+    let currentBench = active.filter((p) => !starterIds.includes(p.id));
 
-    let currentOutfieldPitch: Player[] = [...starterList.filter((p) => p.id !== gkIdToExclude)];
-    let currentBench: Player[] = [...benchList.filter((p) => p.id !== gkIdToExclude)];
-    let interval = rotationIntervalMins;
+    const minsLogged: Record<string, number> = {};
+    active.forEach((p) => { minsLogged[p.id] = 0; });
 
-    while (interval < totalMatchMins) {
-      for (let i = 0; i < subsPerBatch; i++) {
-        if (currentBench.length === 0 || currentOutfieldPitch.length === 0) break;
+    let halfOneGk = starterMap['GK'] || active[0]?.id;
+    let halfTwoGk = gkStrategy === 'half' && halfTwoGkId ? halfTwoGkId : halfOneGk;
 
-        const incoming = currentBench.shift();
-        const outgoing = currentOutfieldPitch.shift();
+    for (let m = 1; m <= totalMatchMins; m++) {
+      if (m === halfMinutes + 1 && gkStrategy === 'half' && halfTwoGk && halfOneGk !== halfTwoGk) {
+        plan.push({
+          id: Math.random().toString(),
+          minute: halfMinutes,
+          offPlayerId: halfOneGk,
+          offPlayerName: `#${squad.find((p) => p.id === halfOneGk)?.squad_number} ${squad.find((p) => p.id === halfOneGk)?.name}`,
+          onPlayerId: halfTwoGk,
+          onPlayerName: `#${squad.find((p) => p.id === halfTwoGk)?.squad_number} ${squad.find((p) => p.id === halfTwoGk)?.name}`,
+          assignedPosition: 'GK',
+          status: 'pending',
+        });
+      }
 
-        if (incoming && outgoing) {
-          plan.push({
-            id: Math.random().toString(),
-            minute: interval,
-            offPlayerId: outgoing.id,
-            offPlayerName: `#${outgoing.squad_number} ${outgoing.name}`,
-            onPlayerId: incoming.id,
-            onPlayerName: `#${incoming.squad_number} ${incoming.name}`,
-            assignedPosition: outgoing.current_position,
-            status: 'pending',
-          });
+      currentPitch.forEach((p) => { minsLogged[p.id] += 1; });
 
-          currentOutfieldPitch.push({ ...incoming, current_position: outgoing.current_position });
-          currentBench.push({ ...outgoing, current_position: 'SUB' });
+      if (m % rotationIntervalMins === 0 && m < totalMatchMins) {
+        let eligibleOffFieldPitch = currentPitch.filter((p) => {
+          if (gkStrategy === 'full') return p.id !== halfOneGk;
+          if (gkStrategy === 'half') return m <= halfMinutes ? p.id !== halfOneGk : p.id !== halfTwoGk;
+          return true;
+        });
+
+        let eligibleOnFieldBench = currentBench.filter((p) => {
+          if (gkStrategy === 'full') return p.id !== halfOneGk;
+          if (gkStrategy === 'half') return m <= halfMinutes ? p.id !== halfOneGk : p.id !== halfTwoGk;
+          return true;
+        });
+
+        if (eligibleOffFieldPitch.length > 0 && eligibleOnFieldBench.length > 0) {
+          eligibleOffFieldPitch.sort((a, b) => minsLogged[b.id] - minsLogged[a.id]);
+          eligibleOnFieldBench.sort((a, b) => minsLogged[a.id] - minsLogged[b.id]);
+
+          const outgoing = eligibleOffFieldPitch[0];
+          const incoming = eligibleOnFieldBench[0];
+
+          if (outgoing && incoming) {
+            plan.push({
+              id: Math.random().toString(),
+              minute: m,
+              offPlayerId: outgoing.id,
+              offPlayerName: `#${outgoing.squad_number} ${outgoing.name}`,
+              onPlayerId: incoming.id,
+              onPlayerName: `#${incoming.squad_number} ${incoming.name}`,
+              assignedPosition: starterMap['C-MID'] ? 'C-MID' : 'L-DEF',
+              status: 'pending',
+            });
+
+            currentPitch = currentPitch.map((p) => (p.id === outgoing.id ? incoming : p));
+            currentBench = currentBench.map((p) => (p.id === incoming.id ? outgoing : p));
+          }
         }
       }
-      interval += rotationIntervalMins;
     }
 
-    setGeneratedPlan(plan);
+    setGeneratedPlan(plan.sort((a, b) => a.minute - b.minute));
   };
 
   const handleCommitPlanToMatchday = () => {
@@ -315,18 +343,17 @@ export default function MatchdayApp() {
     if (active.length === 0) return [];
 
     const totalMatchMins = halfMinutes * 2;
-    const minutesMap: Record<string, number> = {};
+    const minsMap: Record<string, number> = {};
+    active.forEach((p) => { minsMap[p.id] = 0; });
 
-    active.forEach((p) => { minutesMap[p.id] = 0; });
-
-    let currentPitch = active.slice(0, currentPitchCapacity);
-    let currentBench = active.slice(currentPitchCapacity);
+    let currentPitch = active.filter((p) => Object.values(starterMap).includes(p.id));
+    let currentBench = active.filter((p) => !Object.values(starterMap).includes(p.id));
 
     for (let m = 1; m <= totalMatchMins; m++) {
-      currentPitch.forEach((p) => { minutesMap[p.id] = (minutesMap[p.id] || 0) + 1; });
+      currentPitch.forEach((p) => { minsMap[p.id] = (minsMap[p.id] || 0) + 1; });
+
       if (m % rotationIntervalMins === 0 && m < totalMatchMins) {
-        for (let i = 0; i < subsPerBatch; i++) {
-          if (currentBench.length === 0 || currentPitch.length === 0) break;
+        if (currentBench.length > 0 && currentPitch.length > 0) {
           const inc = currentBench.shift();
           const out = currentPitch.shift();
           if (inc && out) {
@@ -339,7 +366,7 @@ export default function MatchdayApp() {
 
     return active.map((p) => ({
       ...p,
-      projectedMins: minutesMap[p.id] || 0,
+      projectedMins: minsMap[p.id] || 0,
     }));
   };
 
@@ -425,7 +452,6 @@ export default function MatchdayApp() {
       const outgoing = newPitch[onPitchIndex];
       const incoming = newBench[benchIndex];
 
-      // DIRECT RE-ASSIGNMENT TO ASSIGNED TARGET SLOT
       newPitch[onPitchIndex] = { ...incoming, current_position: step.assignedPosition };
       newBench[benchIndex] = { ...outgoing, current_position: 'SUB' };
 
@@ -566,7 +592,7 @@ export default function MatchdayApp() {
       <div className="flex justify-between items-center mb-4 px-1">
         <h1 className="text-2xl font-black text-lime-400 flex items-center gap-2"><span>📋</span> CO-GAFFER</h1>
         <span className="text-[10px] bg-gray-900 border border-gray-800 text-lime-400 font-extrabold px-2.5 py-1 rounded-md">
-          PREVIEW & TACTICAL COMMIT
+          COMPLETE & READY
         </span>
       </div>
 
@@ -656,8 +682,10 @@ export default function MatchdayApp() {
           handleGenerateMatchPlan={handleGenerateMatchPlan}
           handleCommitPlanToMatchday={handleCommitPlanToMatchday}
           currentPitchCapacity={currentPitchCapacity}
-          isGkLocked={isGkLocked}
-          setIsGkLocked={setIsGkLocked}
+          gkStrategy={gkStrategy}
+          setGkStrategy={setGkStrategy}
+          halfTwoGkId={halfTwoGkId}
+          setHalfTwoGkId={setHalfTwoGkId}
           activeFormations={activeFormations}
           formationIndex={formationIndex}
           setFormationIndex={setFormationIndex}

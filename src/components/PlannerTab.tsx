@@ -19,6 +19,7 @@ type Props = {
   handleAddCustomSubStep: () => void;
   generatedPlan: SubPlanStep[];
   handleRemoveSubStep: (id: string) => void;
+  handleMoveSubStep: (index: number, direction: 'up' | 'down') => void;
   handleUpdateSubStepPosition: (stepId: string, newPosition: string) => void;
   availablePlayerIds: string[];
   togglePlayerAvailability: (id: string) => void;
@@ -341,32 +342,56 @@ export default function PlannerTab(props: Props) {
         </div>
       </div>
 
-      {/* EDITABLE SCHEDULE PREVIEW BEFORE COMMIT */}
+      {/* EDITABLE SCHEDULE PREVIEW BEFORE COMMIT WITH REORDERING */}
       {props.generatedPlan.length > 0 && (
         <div className="bg-gray-900/90 p-4 rounded-2xl border border-gray-800 shadow-md flex flex-col gap-3">
           <div className="flex justify-between items-center">
             <h2 className="text-xs uppercase tracking-widest text-lime-400 font-bold">
               📋 3. Review & Adjust Rotation Schedule ({props.generatedPlan.length})
             </h2>
-            <span className="text-[10px] text-gray-400">Reassign target pitch slot</span>
+            <span className="text-[10px] text-gray-400">Reorder with ⬆️ ⬇️</span>
           </div>
 
           <div className="flex flex-col gap-2.5">
-            {props.generatedPlan.map((step) => (
+            {props.generatedPlan.map((step, idx) => (
               <div key={step.id} className="bg-black p-3 rounded-xl border border-gray-800 flex flex-col gap-2">
                 <div className="flex justify-between items-center text-xs">
                   <div>
                     <span className="text-amber-400 font-mono font-bold">Min {step.minute}' — </span>
                     <span className="text-red-400 font-bold">OFF: {step.offPlayerName} </span>
                     <span className="text-lime-400 font-bold">ON: {step.onPlayerName}</span>
+                    {('isManual' in step && Boolean((step as SubPlanStep & { isManual?: boolean }).isManual)) && (
+                      <span className="ml-2 text-[9px] bg-amber-500/20 text-amber-400 border border-amber-500/30 px-1.5 py-0.5 rounded uppercase font-bold">
+                        Manual
+                      </span>
+                    )}
                   </div>
-                  <button
-                    type="button"
-                    onClick={() => props.handleRemoveSubStep(step.id)}
-                    className="text-red-500 font-bold text-xs px-2 py-1"
-                  >
-                    🗑️
-                  </button>
+
+                  <div className="flex items-center gap-1">
+                    <button
+                      type="button"
+                      disabled={idx === 0}
+                      onClick={() => props.handleMoveSubStep(idx, 'up')}
+                      className="p-1 text-xs bg-gray-900 text-gray-300 rounded border border-gray-800 disabled:opacity-20"
+                    >
+                      ⬆️
+                    </button>
+                    <button
+                      type="button"
+                      disabled={idx === props.generatedPlan.length - 1}
+                      onClick={() => props.handleMoveSubStep(idx, 'down')}
+                      className="p-1 text-xs bg-gray-900 text-gray-300 rounded border border-gray-800 disabled:opacity-20"
+                    >
+                      ⬇️
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => props.handleRemoveSubStep(step.id)}
+                      className="text-red-500 font-bold text-xs px-1.5 py-1"
+                    >
+                      🗑️
+                    </button>
+                  </div>
                 </div>
 
                 <div className="flex items-center gap-2 pt-2 border-t border-gray-900">

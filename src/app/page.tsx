@@ -42,6 +42,7 @@ const FORMATION_OPTIONS: Record<number, { label: string; roles: string[] }[]> = 
 };
 
 const POSITION_SLOTS = ['GK', 'L-DEF', 'C-DEF', 'R-DEF', 'L-MID', 'C-MID', 'R-MID', 'L-STR', 'C-STR', 'R-STR'];
+type ExtendedSubPlanStep = SubPlanStep & { isManual?: boolean };
 
 export default function MatchdayApp() {
   const [activeTab, setActiveTab] = useState<'matchday' | 'planner' | 'training' | 'squad' | 'stats'>('matchday');
@@ -75,7 +76,7 @@ export default function MatchdayApp() {
   const [halfTwoGkId, setHalfTwoGkId] = useState<string>('');
   const [rotationIntervalMins, setRotationIntervalMins] = useState<number>(5);
   const [subsPerBatch, setSubsPerBatch] = useState<number>(2);
-  const [generatedPlan, setGeneratedPlan] = useState<SubPlanStep[]>([]);
+  const [generatedPlan, setGeneratedPlan] = useState<ExtendedSubPlanStep[]>([]);
 
   const [goals, setGoals] = useState<MatchGoal[]>([]);
   const [playerOfTheMatch, setPlayerOfTheMatch] = useState<string | null>(null);
@@ -237,14 +238,16 @@ export default function MatchdayApp() {
     setStarterMap(nextMap);
   };
 
-  // MULTI-SUB ROTATION ENGINE WITH GK 10M OUTFIELD GUARANTEE
+  // MULTI-SUB ROTATION ENGINE (PRESERVES MANUAL SUBS AT BOTTOM)
   const handleGenerateMatchPlan = () => {
     triggerHaptic();
     const active = squad.filter((p) => availablePlayerIds.includes(p.id));
     if (active.length === 0) return;
 
+    const existingManuals = generatedPlan.filter((s) => s.isManual);
+
     const totalMatchMins = halfMinutes * 2;
-    const plan: SubPlanStep[] = [];
+    const autoPlan: ExtendedSubPlanStep[] = [];
 
     let starterIds = Object.values(starterMap);
     let currentPitch = active.filter((p) => starterIds.includes(p.id));
@@ -262,7 +265,7 @@ export default function MatchdayApp() {
 
     for (let m = 1; m <= totalMatchMins; m++) {
       if (m === halfMinutes + 1 && gkStrategy === 'half' && halfTwoGk && halfOneGk !== halfTwoGk) {
-        plan.push({
+        autoPlan.push({
           id: Math.random().toString(),
           minute: halfMinutes,
           offPlayerId: halfOneGk,
@@ -271,10 +274,11 @@ export default function MatchdayApp() {
           onPlayerName: `#${squad.find((p) => p.id === halfTwoGk)?.squad_number} ${squad.find((p) => p.id === halfTwoGk)?.name}`,
           assignedPosition: 'GK',
           status: 'pending',
+          isManual: false,
         });
 
         currentPitch = currentPitch.map((p) => (p.id === halfOneGk ? active.find((a) => a.id === halfTwoGk)! : p));
-        currentBench = currentBench.map((p) => (p.id === halfTwoGk ? active.find((a) => a.id === halfOneGk)! : p));
+        currentBench = currentBench.map((p) => (p.id === halfTwoGk ? active.find((a) => a.id === halfTwoGk) : p)).filter(Boolean) as Player[];
       }
 
       currentPitch.forEach((p) => { 
@@ -316,7 +320,7 @@ export default function MatchdayApp() {
             const incoming = eligibleOn[b];
 
             if (outgoing && incoming) {
-              plan.push({
+              autoPlan.push({
                 id: Math.random().toString(),
                 minute: m,
                 offPlayerId: outgoing.id,
@@ -325,6 +329,7 @@ export default function MatchdayApp() {
                 onPlayerName: `#${incoming.squad_number} ${incoming.name}`,
                 assignedPosition: starterMap['C-MID'] ? 'C-MID' : 'L-DEF',
                 status: 'pending',
+                isManual: false,
               });
 
               currentPitch = currentPitch.map((p) => (p.id === outgoing.id ? incoming : p));
@@ -335,7 +340,10 @@ export default function MatchdayApp() {
       }
     }
 
-    setGeneratedPlan(plan.sort((a, b) => a.minute - b.minute));
+    autoPlan.sort((a, b) => a.minute - b.minute);
+
+    // Auto schedule comes first, Manual additions stay at the bottom
+    setGeneratedPlan([...autoPlan, ...existingManuals]);
   };
 
   const handleAddCustomSubStep = () => {
@@ -346,7 +354,7 @@ export default function MatchdayApp() {
 
     triggerHaptic();
 
-    const newStep: SubPlanStep = {
+    const newStep: ExtendedSubPlanStep = {
       id: Math.random().toString(),
       minute: planMinute,
       offPlayerId: offP.id,
@@ -355,11 +363,26 @@ export default function MatchdayApp() {
       onPlayerName: `#${onP.squad_number} ${onP.name}`,
       assignedPosition: planTargetPos,
       status: 'pending',
+      isManual: true,
     };
 
-    setGeneratedPlan((prev): SubPlanStep[] => [...prev, newStep].sort((a, b) => a.minute - b.minute));
+    setGeneratedPlan((prev) => [...prev, newStep]);
     setPlanOffPlayerId('');
     setPlanOnPlayerId('');
+  };
+
+  const handleMoveSubStep = (index: number, direction: 'up' | 'down') => {
+    triggerHaptic();
+    setGeneratedPlan((prev) => {
+      const next = [...prev];
+      const targetIdx = direction === 'up' ? index - 1 : index + 1;
+      if (targetIdx < 0 || targetIdx >= next.length) return prev;
+
+      const temp = next[index];
+      next[index] = next[targetIdx];
+      next[targetIdx] = temp;
+      return next;
+    });
   };
 
   const handleCommitPlanToMatchday = () => {
@@ -388,7 +411,6 @@ export default function MatchdayApp() {
     );
   };
 
-  // MULTI-SUB PROJECTED MINUTES AUDIT ENGINE
   const getProjectedMinutes = () => {
     const active = squad.filter((p) => availablePlayerIds.includes(p.id));
     if (active.length === 0) return [];
@@ -662,7 +684,7 @@ export default function MatchdayApp() {
       <div className="flex justify-between items-center mb-4 px-1">
         <h1 className="text-2xl font-black text-lime-400 flex items-center gap-2"><span>📋</span> CO-GAFFER</h1>
         <span className="text-[10px] bg-gray-900 border border-gray-800 text-lime-400 font-extrabold px-2.5 py-1 rounded-md">
-          MANUAL SUB ADDITION FIXED
+          REORDERABLE SUB LIST
         </span>
       </div>
 
@@ -740,6 +762,7 @@ export default function MatchdayApp() {
           handleAddCustomSubStep={handleAddCustomSubStep}
           generatedPlan={generatedPlan}
           handleRemoveSubStep={(id) => setGeneratedPlan((prev) => prev.filter((s) => s.id !== id))}
+          handleMoveSubStep={handleMoveSubStep}
           handleUpdateSubStepPosition={handleUpdateSubStepPosition}
           availablePlayerIds={availablePlayerIds}
           togglePlayerAvailability={togglePlayerAvailability}
